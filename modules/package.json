@@ -1,0 +1,14 @@
+{
+  "name": "discord-bot-modules",
+  "version": "1.0.0",
+  "description": "Shared dependencies for bot modules",
+  "dependencies": {
+    "@google/generative-ai": "^0.2.1",
+    "@discordjs/voice": "^0.16.1",
+    "google-tts-api": "^2.0.2",
+    "axios": "^0.21.1",
+    "play-dl": "^1.9.6",
+    "libsodium-wrappers": "^0.7.11",
+    "ffmpeg-static": "^5.2.0"
+  }
+}

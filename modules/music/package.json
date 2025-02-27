@@ -1,0 +1,16 @@
+{
+  "name": "discord-bot-module-music",
+  "version": "1.0.0",
+  "description": "Music player module with YouTube support",
+  "main": "index.js",
+  "dependencies": {
+    "@discordjs/voice": "^0.16.1",
+    "discord-player": "^6.6.6",
+    "play-dl": "^1.9.7", 
+    "ffmpeg-static": "^5.2.0",
+    "sodium-native": "^4.0.4",
+    "libsodium-wrappers": "^0.7.13"
+  },
+  "author": "",
+  "license": "MIT"
+}

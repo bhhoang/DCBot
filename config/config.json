@@ -1,0 +1,68 @@
+{
+  "bot": {
+    "token": "",
+    "clientId": "",
+    "applicationId": "",
+    "ownerIds": ["285233153923219457"],
+    "prefix": "!",
+    "status": "online",
+    "activity": {
+      "type": "PLAYING",
+      "name": "with modules"
+    }
+  },
+  
+  "commands": {
+    "registerSlashCommands": true,
+    "enableLegacyCommands": true,
+    "cooldown": 3,
+    "caseSensitive": false
+  },
+  
+  "development": {
+    "debug": false,
+    "testGuildId": "",
+    "devMode": false,
+    "logLevel": "info"
+  },
+  
+  "database": {
+    "enabled": false,
+    "type": "sqlite",
+    "path": "./data/database.sqlite",
+    "mongodb": {
+      "uri": "mongodb://localhost:27017/discordbot",
+      "options": {
+        "useNewUrlParser": true,
+        "useUnifiedTopology": true
+      }
+    }
+  },
+  
+  "logging": {
+    "consoleOutput": true,
+    "fileOutput": true,
+    "logDirectory": "./logs",
+    "logLevel": "info",
+    "logMessageContent": true,
+    "logCommands": true
+  },
+  
+  "permissions": {
+    "adminRoles": ["Admin", "Moderator"],
+    "moderationRoles": ["Moderator"],
+    "djRoles": ["DJ"]
+  },
+
+  "gemini": {
+    "apiKey": ""
+  },
+  
+  "features": {
+    "welcomeMessages": true,
+    "leaveMessages": true,
+    "autoModeration": true,
+    "autoRole": false,
+    "memberTracking": true
+  }
+}
