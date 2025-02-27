@@ -1049,6 +1049,8 @@ module.exports = {
         if (interaction.isButton()) {
           if (interaction.customId === 'masoi_join') {
             await this.handleJoinButton(interaction);
+          } else if (interaction.customId === 'masoi_start') {
+            await this.handleStartButton(interaction);
           } else if (interaction.customId.startsWith('masoi_vote_')) {
             await this.handleVoteButton(interaction);
           }
@@ -1075,6 +1077,52 @@ module.exports = {
     activeGames.clear();
   },
   
+  // Handle start button interaction
+  async handleStartButton(interaction) {
+    const game = activeGames.get(interaction.channelId);
+    if (!game) {
+      await interaction.reply({ 
+        content: "Không có trò chơi Ma Sói nào đang diễn ra trong kênh này!", 
+        ephemeral: true 
+      });
+      return;
+    }
+    
+    if (game.host.id !== interaction.user.id) {
+      await interaction.reply({ 
+        content: "Chỉ người tạo trò chơi mới có thể bắt đầu!", 
+        ephemeral: true 
+      });
+      return;
+    }
+    
+    if (game.state !== STATE.LOBBY) {
+      await interaction.reply({ 
+        content: "Trò chơi đã bắt đầu!", 
+        ephemeral: true 
+      });
+      return;
+    }
+    
+    await interaction.deferReply();
+    
+    const result = await game.start();
+    
+    if (result.success) {
+      // Disable the join and start buttons
+      try {
+        const message = await interaction.channel.messages.fetch(game.messageId);
+        await message.edit({ components: [] });
+      } catch (error) {
+        console.error("Error updating game message:", error);
+      }
+      
+      await interaction.editReply("Trò chơi Ma Sói đã bắt đầu! Mỗi người chơi sẽ nhận được tin nhắn riêng với vai trò của mình.");
+    } else {
+      await interaction.editReply(result.message || "Không thể bắt đầu trò chơi.");
+    }
+  },
+  
   // Handle join button interaction
   async handleJoinButton(interaction) {
     const game = activeGames.get(interaction.channelId);
@@ -1094,38 +1142,6 @@ module.exports = {
     } else {
       await interaction.reply({ 
         content: "Bạn đã tham gia trò chơi này hoặc trò chơi đã bắt đầu.", 
-        ephemeral: true 
-      });
-    }
-  },
-  
-  // Handle vote button interaction
-  async handleVoteButton(interaction) {
-    const game = activeGames.get(interaction.channelId);
-    if (!game || game.state !== STATE.VOTING) return;
-    
-    // Get target ID from button
-    const targetId = interaction.customId.replace('masoi_vote_', '');
-    
-    // Register vote
-    const success = game.handleVote(interaction.user.id, targetId);
-    
-    if (success) {
-      if (targetId === 'skip') {
-        await interaction.reply({ 
-          content: `Bạn đã quyết định không bỏ phiếu.`, 
-          ephemeral: true 
-        });
-      } else {
-        const target = game.players.get(targetId);
-        await interaction.reply({ 
-          content: `Bạn đã bỏ phiếu cho ${target.name}.`, 
-          ephemeral: true 
-        });
-      }
-    } else {
-      await interaction.reply({ 
-        content: "Bạn không thể bỏ phiếu trong lúc này.", 
         ephemeral: true 
       });
     }
@@ -1265,6 +1281,38 @@ module.exports = {
     }
   },
   
+  // Handle vote button interaction
+  async handleVoteButton(interaction) {
+    const game = activeGames.get(interaction.channelId);
+    if (!game || game.state !== STATE.VOTING) return;
+    
+    // Get target ID from button
+    const targetId = interaction.customId.replace('masoi_vote_', '');
+    
+    // Register vote
+    const success = game.handleVote(interaction.user.id, targetId);
+    
+    if (success) {
+      if (targetId === 'skip') {
+        await interaction.reply({ 
+          content: `Bạn đã quyết định không bỏ phiếu.`, 
+          ephemeral: true 
+        });
+      } else {
+        const target = game.players.get(targetId);
+        await interaction.reply({ 
+          content: `Bạn đã bỏ phiếu cho ${target.name}.`, 
+          ephemeral: true 
+        });
+      }
+    } else {
+      await interaction.reply({ 
+        content: "Bạn không thể bỏ phiếu trong lúc này.", 
+        ephemeral: true 
+      });
+    }
+  },
+  
   // Update the lobby message with current players
   async updateLobbyMessage(game) {
     if (game.messageId) {
@@ -1285,17 +1333,6 @@ module.exports = {
         console.error("Error updating lobby message:", error);
       }
     }
-  },
-  
-  // Get players list as a string
-  getPlayersList(game) {
-    if (game.players.size === 0) {
-      return "Chưa có người chơi nào tham gia.";
-    }
-    
-    return Array.from(game.players.values())
-      .map(player => `• ${player.name}`)
-      .join('\n');
   },
   
   // Commands
@@ -1639,20 +1676,27 @@ module.exports = {
       },
       slash: true,
       async execute(interaction, bot) {
-        // Use the same logic as the main command
-        const masoiCommand = this.commands.find(cmd => cmd.name === "masoi");
+        // For the alias, directly call the masoi command from the bot's commands
+        const masoiCommand = bot.commandHandler.commands.get("masoi");
         if (masoiCommand) {
           await masoiCommand.execute(interaction, bot);
+        } else {
+          await interaction.reply({
+            content: "Lệnh Ma Sói không khả dụng!",
+            ephemeral: true
+          });
         }
       },
       
       // Legacy command
       legacy: true,
       async legacyExecute(message, args, bot) {
-        // Use the same logic as the main command
-        const masoiCommand = this.commands.find(cmd => cmd.name === "masoi");
+        // For the alias, directly call the masoi command from the bot's commands
+        const masoiCommand = bot.commandHandler.commands.get("masoi");
         if (masoiCommand) {
           await masoiCommand.legacyExecute(message, args, bot);
+        } else {
+          await message.reply("Lệnh Ma Sói không khả dụng!");
         }
       }
     }
