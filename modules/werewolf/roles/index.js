@@ -1,5 +1,6 @@
 // modules/werewolf/roles/index.js
 const Werewolf = require('./werewolf');
+const CursedWerewolf = require('./cursedWerewolf');
 const Witch = require('./witch');
 const Seer = require('./seer');
 const Bodyguard = require('./bodyguard');
@@ -10,6 +11,7 @@ const Villager = require('./villager');
 // Role map by ID
 const ROLES = {
   WEREWOLF: new Werewolf(),
+  CURSED_WEREWOLF: new CursedWerewolf(),
   WITCH: new Witch(),
   SEER: new Seer(),
   BODYGUARD: new Bodyguard(),
@@ -39,6 +41,7 @@ module.exports = {
   getAllRoleIds,
   ROLES,
   Werewolf,
+  CursedWerewolf,
   Witch,
   Seer,
   Bodyguard,

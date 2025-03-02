@@ -22,6 +22,10 @@ async function reloadModules(moduleName, bot) {
       // Get all currently loaded modules
       const loadedModules = Array.from(bot.moduleLoader.modules.keys());
       
+      // First, unregister commands and events
+      await bot.commandHandler.unregisterAllCommands();
+      await bot.eventHandler.unregisterAllEvents();
+      
       // Unload all modules
       await bot.moduleLoader.unloadModules();
       
@@ -37,10 +41,8 @@ async function reloadModules(moduleName, bot) {
         }
       }
       
-      // Register commands
+      // Register commands and events ONCE after all modules are loaded
       await bot.commandHandler.registerCommands();
-      
-      // Register event handlers
       await bot.eventHandler.registerEvents();
       
       return results;
@@ -50,22 +52,57 @@ async function reloadModules(moduleName, bot) {
     const moduleNames = moduleName.split(/[\s,]+/).filter(Boolean);
     
     if (moduleNames.length > 1) {
+      // Collect modules to be reloaded
+      const modulesToReload = [];
+      
       for (const name of moduleNames) {
-        const singleResult = await reloadSingleModule(name, bot);
-        results.success.push(...singleResult.success);
-        results.failed.push(...singleResult.failed);
-        results.notFound.push(...singleResult.notFound);
+        if (bot.moduleLoader.isModuleLoaded(name)) {
+          modulesToReload.push(name);
+        } else {
+          // Try to find the module
+          const modPath = findModulePath(name, bot);
+          if (modPath) {
+            modulesToReload.push(name);
+          } else {
+            results.notFound.push(name);
+          }
+        }
       }
       
-      // Register commands and events after all modules are reloaded
+      // First unregister all commands and events for these modules
+      for (const name of modulesToReload) {
+        if (bot.moduleLoader.isModuleLoaded(name)) {
+          // Unregister commands from this module
+          await bot.commandHandler.unregisterModuleCommands(name);
+          // Unregister events from this module
+          await bot.eventHandler.unregisterModuleEvents(name);
+        }
+      }
+      
+      // Then reload each module
+      for (const name of modulesToReload) {
+        const singleResult = await reloadSingleModule(name, bot, false); // Pass false to skip command registration
+        results.success.push(...singleResult.success);
+        results.failed.push(...singleResult.failed);
+      }
+      
+      // Register commands and events ONCE after all modules are reloaded
       await bot.commandHandler.registerCommands();
       await bot.eventHandler.registerEvents();
       
       return results;
     }
     
-    // Single module reload
-    return await reloadSingleModule(moduleName, bot);
+    // Single module reload - unregister commands/events first
+    if (bot.moduleLoader.isModuleLoaded(moduleName)) {
+      // Unregister commands from this module
+      await bot.commandHandler.unregisterModuleCommands(moduleName);
+      // Unregister events from this module
+      await bot.eventHandler.unregisterModuleEvents(moduleName);
+    }
+    
+    // Now reload the single module
+    return await reloadSingleModule(moduleName, bot, true);
   } catch (error) {
     console.error('Error during reload:', error);
     results.failed.push(moduleName || 'all modules');
@@ -74,12 +111,38 @@ async function reloadModules(moduleName, bot) {
 }
 
 /**
+ * Find a module's path by name
+ * @param {string} moduleName - Name of the module to find
+ * @param {object} bot - Bot instance
+ * @returns {string|null} - Module path or null if not found
+ */
+function findModulePath(moduleName, bot) {
+  const modulesPath = path.join(__dirname, '../modules');
+  const moduleItems = fs.readdirSync(modulesPath, { withFileTypes: true });
+  
+  // Check if module exists as a file or directory
+  const moduleFile = moduleItems.find(item => 
+    (item.isFile() && item.name === `${moduleName}.js`) ||
+    (item.isDirectory() && item.name === moduleName)
+  );
+  
+  if (!moduleFile) {
+    return null;
+  }
+  
+  return moduleFile.isFile() 
+    ? path.join(modulesPath, moduleFile.name)
+    : path.join(modulesPath, moduleFile.name, 'index.js');
+}
+
+/**
  * Reload a single module
  * @param {string} moduleName - Name of the module to reload
  * @param {object} bot - Bot instance
+ * @param {boolean} registerCommands - Whether to register commands after reloading
  * @returns {object} - Result of the reload operation
  */
-async function reloadSingleModule(moduleName, bot) {
+async function reloadSingleModule(moduleName, bot, registerCommands = true) {
   const results = {
     success: [],
     failed: [],
@@ -109,7 +172,6 @@ async function reloadSingleModule(moduleName, bot) {
         if (moduleFile.isFile()) {
           // Extract metadata without requiring the module
           const modulePath = path.join(modulesPath, moduleFile.name);
-          const moduleContent = fs.readFileSync(modulePath, 'utf8');
           
           // Clear require cache for this module
           delete require.cache[require.resolve(modulePath)];
@@ -146,9 +208,11 @@ async function reloadSingleModule(moduleName, bot) {
         if (bot.moduleLoader.isModuleLoaded(moduleName)) {
           results.success.push(moduleName);
           
-          // Register commands and events for this module
-          await bot.commandHandler.registerCommands();
-          await bot.eventHandler.registerEvents();
+          // Register commands and events only if specified
+          if (registerCommands) {
+            await bot.commandHandler.registerCommands();
+            await bot.eventHandler.registerEvents();
+          }
         } else {
           results.failed.push(moduleName);
         }
@@ -205,9 +269,11 @@ async function reloadSingleModule(moduleName, bot) {
       if (bot.moduleLoader.isModuleLoaded(moduleName)) {
         results.success.push(moduleName);
         
-        // Register commands and events again
-        await bot.commandHandler.registerCommands();
-        await bot.eventHandler.registerEvents();
+        // Register commands and events only if specified
+        if (registerCommands) {
+          await bot.commandHandler.registerCommands();
+          await bot.eventHandler.registerEvents();
+        }
       } else {
         results.failed.push(moduleName);
       }
@@ -228,7 +294,7 @@ module.exports = {
   meta: {
     name: "reload",
     type: "admin",
-    version: "1.0.0",
+    version: "1.1.0", // Updated version
     description: "Reload commands without restarting the bot",
     dependencies: [], // No dependencies on other modules
     npmDependencies: {} // No npm dependencies
@@ -237,6 +303,42 @@ module.exports = {
   // Module initialization
   async init(client, bot) {
     console.log("Reload module initialized!");
+    
+    // Add methods to commandHandler and eventHandler if they don't exist
+    if (bot.commandHandler && !bot.commandHandler.unregisterAllCommands) {
+      bot.commandHandler.unregisterAllCommands = async function() {
+        console.log("Unregistering all commands before reload");
+        // Implementation depends on your command handler structure
+        // This is a placeholder - you need to implement based on your system
+        if (typeof this.commands === 'object') {
+          this.commands.clear();
+        }
+        
+        if (Array.isArray(this.commandsList)) {
+          this.commandsList = [];
+        }
+        
+        return true;
+      };
+    }
+    
+    if (bot.commandHandler && !bot.commandHandler.unregisterModuleCommands) {
+      bot.commandHandler.unregisterModuleCommands = async function(moduleName) {
+        console.log(`Unregistering commands for module: ${moduleName}`);
+        // Implementation depends on your command handler structure
+        // This is a placeholder - you need to implement based on your system
+        return true;
+      };
+    }
+    
+    if (bot.eventHandler && !bot.eventHandler.unregisterAllEvents) {
+      bot.eventHandler.unregisterAllEvents = async function() {
+        console.log("Unregistering all events before reload");
+        // Implementation depends on your event handler structure
+        // This is a placeholder - you need to implement based on your system
+        return true;
+      };
+    }
   },
   
   // Module shutdown

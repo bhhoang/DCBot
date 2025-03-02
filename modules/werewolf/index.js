@@ -84,20 +84,35 @@ module.exports = {
   },
 
   // Module shutdown
+  // Add clean shutdown with TTS
+  // Update the shutdown method completely:
   async shutdown() {
     console.log("Module Ma Sói đang tắt!");
+
+    // Import TTS utils for disconnection
+    try {
+      const ttsUtils = require('./utils/ttsUtils');
+      // Disconnect from all voice channels
+      ttsUtils.disconnectAll();
+    } catch (error) {
+      console.error("Error disconnecting voice channels:", error);
+    }
 
     // Clean up any active games
     for (const [channelId, game] of activeGames.entries()) {
       console.log(`Cleaning up game in channel ${channelId}`);
 
       // Send an embedded message to the channel to notify players that the game is cleaning up
-      // Send a message for players to wait for the game to be cleaned up
-      const cleanupEmbed = new EmbedBuilder()
-        .setTitle("🧹 Trò Chơi Kết Thúc")
-        .setDescription("Trò chơi đã kết thúc. Vui lòng chờ để chúng tôi dọn dẹp.")
-        .setColor("#2f3136");
-      await this.channel.send({ embeds: [cleanupEmbed] });
+      // const cleanupEmbed = new EmbedBuilder()
+      //   .setTitle("🧹 Trò Chơi Kết Thúc")
+      //   .setDescription("Trò chơi đã kết thúc. Vui lòng chờ để chúng tôi dọn dẹp.")
+      //   .setColor("#2f3136");
+
+      try {
+        await game.channel.send({ embeds: [cleanupEmbed] });
+      } catch (error) {
+        console.error(`Error sending cleanup message to channel ${channelId}:`, error);
+      }
 
       // Clean up game timers and resources
       if (typeof game.cleanup === 'function') {
@@ -110,8 +125,7 @@ module.exports = {
       // Try to send a cleanup message
       try {
         await game.channel.send({
-          content: "Trò chơi Ma Sói đã bị buộc dừng do bot khởi động lại hoặc bảo trì hệ thống.",
-          flags: MessageFlags.Ephemeral
+          content: "Trò chơi Ma Sói đã bị buộc dừng do bot khởi động lại hoặc bảo trì hệ thống."
         });
       } catch (error) {
         console.error(`Error sending game shutdown message to channel ${channelId}:`, error);
@@ -137,6 +151,7 @@ module.exports = {
             type: 3, // STRING
             required: false,
             choices: [
+              { name: "Kích hoạt giọng nói", value: "voice" },
               { name: "Tạo trò chơi mới", value: "create" },
               { name: "Tham gia", value: "join" },
               { name: "Bắt đầu", value: "start" },
@@ -179,6 +194,7 @@ module.exports = {
             type: 3, // STRING
             required: false,
             choices: [
+              { name: "Kích hoạt giọng nói", value: "voice" },
               { name: "Tạo trò chơi mới", value: "create" },
               { name: "Tham gia", value: "join" },
               { name: "Bắt đầu", value: "start" },

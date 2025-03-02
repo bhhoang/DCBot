@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const { createAudioPlayer, createAudioResource, joinVoiceChannel, AudioPlayerStatus, 
-        VoiceConnectionStatus, entersState } = require('@discordjs/voice');
+        VoiceConnectionStatus, entersState, NoSubscriberBehavior } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 const { exec } = require('child_process');
 // Explicitly require and handle sodium
@@ -19,12 +19,16 @@ try {
 let ffmpegAvailable = false;
 // Add flag to track sodium availability
 let sodiumReady = false;
+// Track active connections
+const activeConnections = new Map();
+// Platform detection
+const isLinux = process.platform === 'linux';
 
 module.exports = {
   meta: {
     name: "tts",
     type: "utility",
-    version: "1.0.0",
+    version: "1.0.1", // Updated version
     description: "Convert text to speech and play in voice channel",
     dependencies: [],
     npmDependencies: {
@@ -32,7 +36,8 @@ module.exports = {
       '@discordjs/voice': '^0.16.1',
       'axios': '^0.21.1',
       'libsodium-wrappers': '^0.7.11',  // Add encryption package for voice
-      'ffmpeg-static': '^5.2.0'  // Add static FFmpeg executable
+      'ffmpeg-static': '^5.2.0',  // Add static FFmpeg executable
+      'prism-media': '^1.3.5'     // Add Prism for opus processing
     }
   },
   
@@ -94,6 +99,20 @@ module.exports = {
   
   // Module shutdown
   async shutdown() {
+    // Destroy all active connections
+    console.log(`Cleaning up ${activeConnections.size} active voice connections`);
+    for (const [guildId, { connection }] of activeConnections.entries()) {
+      try {
+        connection.destroy();
+        console.log(`Destroyed voice connection for guild ${guildId}`);
+      } catch (error) {
+        console.error(`Error destroying voice connection for guild ${guildId}:`, error);
+      }
+    }
+    
+    // Clear the active connections map
+    activeConnections.clear();
+    
     // Clean up any existing TTS files
     const ttsTempDir = path.join(process.cwd(), 'temp', 'tts');
     try {
@@ -101,6 +120,7 @@ module.exports = {
       files.forEach(file => {
         if (file.endsWith('.mp3')) {
           fs.unlinkSync(path.join(ttsTempDir, file));
+          console.log(`Deleted TTS file: ${file}`);
         }
       });
     } catch (error) {
@@ -151,7 +171,7 @@ module.exports = {
       async legacyExecute(message, args, bot) {
         // Check if language is specified
         let text = args.join(' ');
-        let language = 'en-US';
+        let language = 'vi-VN';
         
         // Check if first argument is a language code
         const languageCodes = ['en-US', 'vi-VN', 'fr-FR', 'es-ES', 'de-DE', 'zh-CN'];
@@ -170,6 +190,8 @@ module.exports = {
        * @param {string} language - Language code
        */
       async executeTTS(source, text, language) {
+        console.log("Starting TTS execution...");
+        
         // Validate input
         if (!text) {
           return source.reply({
@@ -186,25 +208,27 @@ module.exports = {
           });
         }
         
-        // Check if sodium is ready
-        if (!sodiumReady) {
+        // Check if sodium is ready - but only enforce on Windows as Linux can sometimes work without it
+        if (!sodiumReady && !isLinux) {
           return source.reply({
             content: "⚠️ Voice encryption not available. Please run `node scripts/install-voice-deps.js` to install the required dependencies.",
             ephemeral: true
           });
         }
         
-        // Get the username of the person who executed the command
-        let username;
+        // Get the server display name (nickname) of the person who executed the command
+        let displayName;
         if (source.member) {
-          // Prefer nickname over username if available
-          username = source.member.nickname || source.user?.username || source.author?.username || "Someone";
+          // Use server nickname (displayName) as the first priority
+          displayName = source.member.displayName || source.member.nickname || source.user?.username || source.author?.username || "Someone";
         } else {
-          username = source.author?.username || "Someone";
+          displayName = source.author?.username || "Someone";
         }
+        console.log(`TTS request from user: ${displayName}`);
         
         // Modify the text to include who's speaking
-        const announcedText = `${username}: ${text}`;
+        const announcedText = `${displayName}: ${text}`;
+        console.log(`Announced text: "${announcedText.substring(0, 50)}${announcedText.length > 50 ? '...' : ''}"`); // Log the first part for debugging
         
         // Validate language
         const supportedLanguages = ['en-US', 'vi-VN', 'fr-FR', 'es-ES', 'de-DE', 'zh-CN'];
@@ -259,96 +283,240 @@ module.exports = {
           
           // Generate audio for all chunks
           const audioChunks = [];
-          for (const chunk of chunks) {
-            const audioUrl = googleTTS.getAudioUrl(chunk, {
-              lang: language,
-              slow: false,
-              host: 'https://translate.google.com'
-            });
+          for (const [index, chunk] of chunks.entries()) {
+            console.log(`Processing chunk ${index + 1}/${chunks.length}: "${chunk.substring(0, 50)}${chunk.length > 50 ? '...' : ''}"`);
             
-            const response = await axios({
-              method: 'get',
-              url: audioUrl,
-              responseType: 'arraybuffer'
-            });
-            
-            audioChunks.push(response.data);
+            try {
+              const audioUrl = googleTTS.getAudioUrl(chunk, {
+                lang: language,
+                slow: false,
+                host: 'https://translate.google.com'
+              });
+              
+              const response = await axios({
+                method: 'get',
+                url: audioUrl,
+                responseType: 'arraybuffer'
+              });
+              
+              audioChunks.push(response.data);
+              console.log(`Successfully generated audio for chunk ${index + 1}`);
+            } catch (error) {
+              console.error(`Error generating audio for chunk ${index + 1}:`, error);
+              throw new Error(`Failed to generate audio for part of the message: ${error.message}`);
+            }
           }
           
           // Combine and save audio chunks
           const combinedBuffer = Buffer.concat(audioChunks);
           fs.writeFileSync(filepath, combinedBuffer);
           
-          // Join voice channel with proper connection handling
-        //   console.log(`Joining voice channel ${voiceChannel.name} (${voiceChannel.id})`);
+          // Log connection attempt
+          console.log(`Joining voice channel ${voiceChannel.name} (${voiceChannel.id})`);
           
-          const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: voiceChannel.guild.id,
-            adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-            selfDeaf: false,
-            selfMute: false
-          });
-          
-          // Wait for connection to be ready before continuing
-          try {
-            // Set a timeout of 30 seconds for the connection
-            await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-            // console.log("Voice connection is ready!");
-          } catch (error) {
-            // Destroy connection if we time out or have an error
-            connection.destroy();
-            throw new Error(`Failed to join voice channel: ${error.message}`);
+          // First try to pre-initialize sodium
+          if (sodium && !sodiumReady) {
+            try {
+              console.log("Pre-initializing sodium...");
+              await sodium.ready;
+              sodiumReady = true;
+              console.log("Sodium successfully initialized");
+            } catch (err) {
+              console.warn("Sodium pre-initialization failed:", err.message);
+              // Continue anyway as we'll try a different approach
+            }
           }
           
-          // Set up connection error handling
-          connection.on(VoiceConnectionStatus.Disconnected, async (oldState, newState) => {
+          // Alternative connection approach that's more resilient on Linux
+          let connection;
+          let retryCount = 0;
+          const maxRetries = 3;
+          let connectionEstablished = false;
+          
+          // Retry loop for connection
+          while (retryCount < maxRetries && !connectionEstablished) {
             try {
-              // Try to reconnect if we get disconnected
-              await Promise.race([
-                entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-                entersState(connection, VoiceConnectionStatus.Connecting, 5_000)
-              ]);
+              // Create voice connection with more conservative settings
+              connection = joinVoiceChannel({
+                channelId: voiceChannel.id,
+                guildId: voiceChannel.guild.id,
+                adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+                selfDeaf: false,
+                selfMute: false
+              });
+              
+              // Set up state change logging
+              connection.on(VoiceConnectionStatus.Connecting, () => {
+                console.log("Voice connection status: Connecting");
+              });
+              
+              connection.on(VoiceConnectionStatus.Signalling, () => {
+                console.log("Voice connection status: Signalling");
+              });
+              
+              connection.on(VoiceConnectionStatus.Ready, () => {
+                console.log("Voice connection status: Ready");
+                connectionEstablished = true;
+              });
+              
+              // Handle connection errors and disconnections
+              connection.on('error', (error) => {
+                console.error('Voice connection error:', error);
+              });
+              
+              connection.on(VoiceConnectionStatus.Disconnected, async () => {
+                console.log("Voice connection disconnected");
+                try {
+                  await Promise.race([
+                    entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+                    entersState(connection, VoiceConnectionStatus.Connecting, 5_000)
+                  ]);
+                  console.log("Reconnecting after disconnect");
+                } catch (error) {
+                  console.log("Failed to reconnect:", error.message);
+                  connection.destroy();
+                }
+              });
+              
+              // Use a shorter timeout for Linux
+              console.log("Waiting for connection to be ready (attempt " + (retryCount + 1) + ")");
+              const connectionTimeout = 15000; // 15 seconds per attempt is better than one long timeout
+              
+              await entersState(connection, VoiceConnectionStatus.Ready, connectionTimeout);
+              console.log("Voice connection is ready!");
+              connectionEstablished = true;
+              break; // Connection successful, exit retry loop
+              
             } catch (error) {
-              // Destroy connection if we can't reconnect
-              connection.destroy();
+              console.error(`Connection attempt ${retryCount + 1} failed:`, error.message);
+              
+              // Clean up failed connection
+              if (connection) {
+                connection.destroy();
+              }
+              
+              // Last attempt failed
+              if (retryCount === maxRetries - 1) {
+                throw new Error(`Failed to join voice channel after ${maxRetries} attempts: ${error.message}`);
+              }
+              
+              // Wait before retrying
+              console.log(`Retrying in ${(retryCount + 1) * 2} seconds...`);
+              await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 2000));
+              retryCount++;
+            }
+          }
+          
+          // Ensure connection is fully established before continuing
+          if (!connectionEstablished) {
+            throw new Error("Failed to establish voice connection");
+          }
+          
+          // Double-check the connection state
+          if (connection.state.status !== VoiceConnectionStatus.Ready) {
+            console.log("Connection shows as established but state is not Ready, waiting for Ready state...");
+            try {
+              await entersState(connection, VoiceConnectionStatus.Ready, 5000);
+              console.log("Connection is now in Ready state");
+            } catch (error) {
+              throw new Error("Voice connection not in Ready state: " + error.message);
+            }
+          }
+          
+          // Create audio player with proper behavior configuration
+          const player = createAudioPlayer({
+            behaviors: {
+              noSubscriber: NoSubscriberBehavior.Pause,
+            },
+          });
+          
+          // Add error handling for player
+          player.on('error', error => {
+            console.error('Audio player error:', error);
+            // Clean up on error
+            try {
+              fs.unlinkSync(filepath);
+            } catch (err) {
+              console.error('Error deleting TTS file after player error:', err);
             }
           });
           
-          // Create audio player
-          const player = createAudioPlayer();
-          connection.subscribe(player);
+          // Subscribe connection to player and verify subscription
+          const subscription = connection.subscribe(player);
           
-          // Play the audio once connection is confirmed ready
-          const resource = createAudioResource(filepath);
+          if (!subscription) {
+            throw new Error("Failed to subscribe connection to audio player");
+          }
+          
+          console.log("Successfully subscribed connection to player");
+          
+          // Wait a short moment to ensure subscription is fully processed
+          await new Promise(resolve => setTimeout(resolve, isLinux ? 1000 : 500));
+          
+          // Create audio resource with platform-specific settings
+          const resource = isLinux 
+            ? createAudioResource(filepath) // Simpler resource creation on Linux
+            : createAudioResource(filepath, {
+                inputType: 'file',
+                inlineVolume: true
+              });
+          
+          // Set volume if available
+          if (resource.volume) {
+            resource.volume.setVolume(1.0); // Full volume
+          }
+          
+          // Play the audio
+          console.log("Preparing to play audio...");
           player.play(resource);
-          console.log("Started playing audio");
+          
+          // Verify playback started
+          try {
+            await entersState(player, AudioPlayerStatus.Playing, 5000);
+            console.log("Audio playback confirmed started");
+          } catch (error) {
+            console.error("Failed to start audio playback:", error);
+            // Continue anyway as it might still work
+          }
+          
+          // Monitor playback state
+          player.on(AudioPlayerStatus.Playing, () => {
+            console.log('Audio is now playing!');
+          });
+          
+          player.on(AudioPlayerStatus.Buffering, () => {
+            console.log('Audio is buffering...');
+          });
+          
+          // Store guild ID to track connections
+          const guildId = voiceChannel.guild.id;
+          activeConnections.set(guildId, {
+            connection,
+            player,
+            timestamp: Date.now()
+          });
           
           // Handle playback completion
-          player.once(AudioPlayerStatus.Idle, () => {
+          player.on(AudioPlayerStatus.Idle, () => {
             console.log("Playback completed");
             // Clean up the file
             try {
               fs.unlinkSync(filepath);
+              console.log('TTS file deleted successfully');
             } catch (err) {
               console.error("Error deleting TTS file:", err);
             }
             
-            // Disconnect from voice channel
-            setTimeout(() => {
-              connection.destroy();
-              console.log("Voice connection destroyed");
-            }, 1000*60); // Small delay to ensure audio is fully played
-          });
-          
-          // Handle player errors
-          player.on('error', error => {
-            console.error("Audio player error:", error);
-            // Clean up on error
-            try {
-              fs.unlinkSync(filepath);
-            } catch {}
-            connection.destroy();
+            // // Disconnect from voice channel after a delay
+            // setTimeout(() => {
+            //   // Check if this is still the active connection
+            //   const activeConn = activeConnections.get(guildId);
+            //   if (activeConn && activeConn.connection === connection) {
+            //     connection.destroy();
+            //     activeConnections.delete(guildId);
+            //     console.log("Voice connection destroyed");
+            //   }
+            // }, isLinux ? 3000 : 5000); // Shorter timeout on Linux
           });
           
           // Respond to the user
@@ -363,7 +531,7 @@ module.exports = {
           
           const embed = new EmbedBuilder()
             .setTitle("🔊 Text-to-Speech")
-            .setDescription(`Playing message from ${username} in ${languageNames[language]}`)
+            .setDescription(`Playing message from ${displayName} in ${languageNames[language]}`)
             .addFields(
               { name: "Text", value: text.length > 1024 ? text.slice(0, 1021) + '...' : text }
             )
@@ -384,7 +552,9 @@ module.exports = {
           if (fs.existsSync(filepath)) {
             try {
               fs.unlinkSync(filepath);
-            } catch {}
+            } catch (err) {
+              console.error('Error deleting TTS file after error:', err);
+            }
           }
           
           // Send error message
@@ -397,6 +567,115 @@ module.exports = {
             });
           } else {
             // Legacy command
+            await source.reply(errorMessage);
+          }
+        }
+      }
+    },
+    
+    // Add a diagnostic command to check voice dependencies
+    {
+      name: "tts-diagnostic",
+      description: "Check TTS module dependencies and voice connectivity",
+      data: {
+        name: "tts-diagnostic",
+        description: "Check TTS module dependencies and voice connectivity",
+        options: []
+      },
+      slash: true,
+      async execute(interaction, bot) {
+        await this.executeDiagnostic(interaction);
+      },
+      
+      // Legacy command
+      legacy: true,
+      async legacyExecute(message, args, bot) {
+        await this.executeDiagnostic(message);
+      },
+      
+      /**
+       * Execute diagnostic functionality
+       * @param {Object} source - Interaction or Message object
+       */
+      async executeDiagnostic(source) {
+        try {
+          const diagnostics = [];
+          
+          // Check FFmpeg
+          diagnostics.push({
+            name: "FFmpeg",
+            status: ffmpegAvailable ? "✅ Available" : "❌ Not Found",
+            details: ffmpegAvailable ? 
+              "FFmpeg is properly installed" : 
+              "Install FFmpeg with npm install ffmpeg-static or system package manager"
+          });
+          
+          // Check Sodium
+          diagnostics.push({
+            name: "Sodium (Voice Encryption)",
+            status: sodiumReady ? "✅ Available" : "❌ Not Initialized",
+            details: sodiumReady ? 
+              "Voice encryption is properly configured" : 
+              "Install with npm install libsodium-wrappers"
+          });
+          
+          // Check voice channel
+          const member = source.member || source.author;
+          const voiceChannel = member.voice?.channel;
+          diagnostics.push({
+            name: "Voice Channel",
+            status: voiceChannel ? "✅ Connected" : "⚠️ Not Connected",
+            details: voiceChannel ? 
+              `You are in voice channel: ${voiceChannel.name}` :
+              "Join a voice channel to use TTS features"
+          });
+          
+          // Build embed
+          const embed = new EmbedBuilder()
+            .setTitle("🔍 TTS Diagnostic Results")
+            .setDescription("Checking voice dependencies and settings...")
+            .setColor('#3498db')
+            .setTimestamp();
+          
+          // Add diagnostics to embed
+          for (const diag of diagnostics) {
+            embed.addFields({ 
+              name: `${diag.name}: ${diag.status}`, 
+              value: diag.details 
+            });
+          }
+          
+          // Add system info
+          embed.addFields({
+            name: "System Information",
+            value: `Platform: ${process.platform}\nNode.js: ${process.version}\nDiscord.js Voice: ^0.16.1`
+          });
+          
+          // Add installation help
+          embed.addFields({
+            name: "🛠️ Installation Help",
+            value: "If dependencies are missing, run `node scripts/install-voice-deps.js` or check the documentation for manual installation steps."
+          });
+          
+          if (source.reply) {
+            // Slash command
+            await source.reply({ embeds: [embed] });
+          } else {
+            // Legacy command
+            await source.reply({ embeds: [embed] });
+          }
+          
+        } catch (error) {
+          console.error("Diagnostic Error:", error);
+          
+          // Send error message
+          const errorMessage = `Failed to run diagnostics: ${error.message}`;
+          if (source.reply) {
+            await source.reply({
+              content: errorMessage,
+              ephemeral: true
+            });
+          } else {
             await source.reply(errorMessage);
           }
         }

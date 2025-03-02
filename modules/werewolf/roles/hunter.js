@@ -20,7 +20,22 @@ class Hunter extends BaseRole {
    * @param {Object} player - The Hunter player who died
    */
   async handleDeath(gameState, player) {
-    // Hunter can shoot someone when they die
+    console.log(`[DEBUG] Hunter ${player.name} has died, activating ability`);
+    
+    // Check if this Hunter has already used their ability
+    if (!gameState.hunterAbilityUsed) {
+      gameState.hunterAbilityUsed = {};
+    }
+    
+    if (gameState.hunterAbilityUsed[player.id]) {
+      console.log(`[DEBUG] Hunter ${player.name} has already used their ability`);
+      return { success: false, message: "Hunter already used ability" };
+    }
+    
+    // Mark that this Hunter is using their ability now
+    gameState.hunterAbilityUsed[player.id] = true;
+    
+    // Create embed for the hunter's ability
     const embed = new EmbedBuilder()
       .setTitle(`🏹 Khả Năng Đặc Biệt Của Thợ Săn`)
       .setDescription(`Bạn đã bị giết, nhưng có thể bắn một mũi tên cuối cùng. Hãy chọn người bạn muốn bắn.`)
@@ -35,6 +50,11 @@ class Hunter extends BaseRole {
     const targets = Object.values(gameState.players).filter(p => 
       p.isAlive && p.id !== player.id
     );
+    
+    if (targets.length === 0) {
+      console.log(`[DEBUG] No alive targets for Hunter to shoot`);
+      return { success: false, message: "No valid targets" };
+    }
     
     targets.forEach(target => {
       selectMenu.addOptions({
@@ -54,6 +74,13 @@ class Hunter extends BaseRole {
     const row = new ActionRowBuilder().addComponents(selectMenu);
     
     try {
+      // TTS announcement for Hunter ability
+      if (gameState.voiceEnabled && gameState.voiceChannel) {
+        const ttsUtils = require('../utils/ttsUtils');
+        const hunterText = ttsUtils.getNightPhaseAnnouncement('HUNTER', gameState.day);
+        await ttsUtils.speak(gameState.voiceChannel, hunterText);
+      }
+      
       // Send the prompt to the Hunter
       await player.user.send({ embeds: [embed], components: [row] });
       

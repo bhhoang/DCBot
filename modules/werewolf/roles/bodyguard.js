@@ -1,4 +1,5 @@
-// modules/werewolf/roles/bodyguard.js
+// modules/werewolf/roles/bodyguard.js - Updated for improved protection rules
+
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const BaseRole = require('./baseRole');
 const { NIGHT_PHASE, TEAM, CUSTOM_ID } = require('../constants');
@@ -13,6 +14,7 @@ class Bodyguard extends BaseRole {
     this.nightAction = true;
     this.emoji = '🛡️';
     this.nightPhase = NIGHT_PHASE.BODYGUARD;
+    this.protectionCooldown = 2; // Number of rounds before can protect same person again
   }
 
   /**
@@ -22,6 +24,11 @@ class Bodyguard extends BaseRole {
    * @returns {Object} Embed and components for night action
    */
   createNightActionPrompt(gameState, player) {
+    // Initialize protection history if needed
+    if (!gameState.bodyguardHistory) {
+      gameState.bodyguardHistory = {};
+    }
+
     const embed = new EmbedBuilder()
       .setTitle(`🌙 Đêm ${gameState.day} - Hành Động Của ${this.name}`)
       .setDescription('Bạn muốn bảo vệ ai đêm nay?')
@@ -38,24 +45,56 @@ class Bodyguard extends BaseRole {
       .setCustomId(`${CUSTOM_ID.ACTION_PREFIX}${player.id}`)
       .setPlaceholder('Chọn người chơi để bảo vệ...');
     
-    // Can't protect the same person twice in a row
-    const lastProtectedId = gameState.lastProtected;
-    
-    // Add all players as options (including self)
+    // Check which players are on cooldown
+    const onCooldown = new Set();
+    for (const targetId in gameState.bodyguardHistory) {
+      const lastProtectedDay = gameState.bodyguardHistory[targetId];
+      const daysSinceProtection = gameState.day - lastProtectedDay;
+      
+      if (daysSinceProtection < this.protectionCooldown) {
+        onCooldown.add(targetId);
+      }
+    }
+
+    // Add all eligible players as options
     targets.forEach(target => {
-      // Skip if this was protected last night (can't protect same person twice)
-      if (target.id === lastProtectedId && gameState.day > 1) {
-        return;
+      const isCooldown = onCooldown.has(target.id);
+      const isSelf = target.id === player.id;
+      
+      // Only add if not on cooldown
+      if (!isCooldown) {
+        selectMenu.addOptions({
+          label: isSelf ? `${target.name} (Bản thân)` : target.name,
+          value: target.id,
+          description: isSelf ? 
+            'Bảo vệ chính mình' : 
+            `Bảo vệ ${target.name}`,
+        });
+      }
+    });
+    
+    // Add info about players on cooldown to the embed
+    if (onCooldown.size > 0) {
+      const cooldownPlayers = [];
+      for (const id of onCooldown) {
+        const player = gameState.players[id];
+        if (player) {
+          const lastDay = gameState.bodyguardHistory[id];
+          const remainingDays = this.protectionCooldown - (gameState.day - lastDay);
+          cooldownPlayers.push(`${player.name} (còn ${remainingDays} đêm)`);
+        }
       }
       
-      selectMenu.addOptions({
-        label: target.id === player.id ? `${target.name} (Bản thân)` : target.name,
-        value: target.id,
-        description: target.id === player.id ? 
-          'Bảo vệ chính mình' : 
-          `Bảo vệ ${target.name}`,
-      });
-    });
+      if (cooldownPlayers.length > 0) {
+        embed.addFields([
+          { 
+            name: '⏳ Người chơi đang trong thời gian hồi', 
+            value: cooldownPlayers.join('\n'),
+            inline: false
+          }
+        ]);
+      }
+    }
     
     const row = new ActionRowBuilder().addComponents(selectMenu);
     
@@ -70,8 +109,16 @@ class Bodyguard extends BaseRole {
    * @returns {Object} Action result
    */
   processNightAction(gameState, playerId, targetId) {
+    // Initialize history if needed
+    if (!gameState.bodyguardHistory) {
+      gameState.bodyguardHistory = {};
+    }
+    
     // Store the target ID in game state
     gameState.nightActions.bodyguardTarget = targetId;
+    
+    // Update protection history
+    gameState.bodyguardHistory[targetId] = gameState.day;
     
     const target = gameState.players[targetId];
     const isSelf = targetId === playerId;

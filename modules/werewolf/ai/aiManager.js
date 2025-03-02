@@ -9,10 +9,37 @@ const AI_NAMES = [
   "Bot-Hải", "Bot-Phong", "Bot-Dương", "Bot-Phúc", "Bot-Vinh"
 ];
 
+
+// Personality traits to add variety to AI decision making
+const PERSONALITY_TRAITS = [
+  {
+    type: "strategic",   // Makes more logical decisions
+    suspicionThreshold: 65,
+    skipVoteChance: 0.05,
+    villagerStrategy: "logical",
+    werewolfStrategy: "deceptive"
+  },
+  {
+    type: "impulsive",   // Makes riskier decisions
+    suspicionThreshold: 40,
+    skipVoteChance: 0.02,
+    villagerStrategy: "aggressive",
+    werewolfStrategy: "aggressive"
+  },
+  {
+    type: "cautious",    // Makes more conservative decisions
+    suspicionThreshold: 75,
+    skipVoteChance: 0.15,
+    villagerStrategy: "defensive",
+    werewolfStrategy: "blend-in"
+  }
+];
+
 class AIManager {
   constructor() {
     this.usedNames = new Set();
     this.aiCount = 0;
+    this.aiPlayers = {};
   }
 
   /**
@@ -41,6 +68,15 @@ class AIManager {
   }
 
   /**
+   * Get a random personality trait for an AI
+   * @returns {Object} Personality trait object
+   */
+  getRandomPersonality() {
+    const index = Math.floor(Math.random() * PERSONALITY_TRAITS.length);
+    return PERSONALITY_TRAITS[index];
+  }
+
+  /**
    * Create AI players to fill the game
    * @param {Object} gameState - Current game state
    * @param {number} targetCount - Desired total player count
@@ -60,7 +96,14 @@ class AIManager {
       
       // Role will be assigned later by the game
       const aiPlayer = new AIPlayer(aiId, aiName, null);
+      
+      // Assign a random personality to this AI
+      aiPlayer.personality = this.getRandomPersonality();
+      
       aiPlayers.push(aiPlayer);
+      
+      // Store reference to this AI player
+      this.aiPlayers[aiId] = aiPlayer;
     }
     
     return aiPlayers;
@@ -80,6 +123,14 @@ class AIManager {
     
     // Have each AI player perform their night action
     for (const aiPlayer of aiPlayers) {
+      // Add realistic delay between AI decisions (varies by personality)
+      const baseDelay = aiPlayer.personality?.type === 'impulsive' ? 1000 : 2000;
+      const randomFactor = Math.floor(Math.random() * 2000);
+      const delay = baseDelay + randomFactor;
+      
+      // Wait before making a decision
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
       const actionResult = await aiPlayer.performNightAction(gameState);
       
       if (actionResult.success) {
@@ -94,6 +145,7 @@ class AIManager {
     }
   }
 
+
   /**
    * Process voting for all AI players
    * @param {Object} gameState - Current game state
@@ -105,16 +157,58 @@ class AIManager {
     
     console.log(`Processing votes for ${aiPlayers.length} AI players`);
     
-    // Add a slight delay between votes to make it seem more natural
-    for (const aiPlayer of aiPlayers) {
-      // Random delay between 1-3 seconds
-      const delay = 1000 + Math.floor(Math.random() * 2000);
+    // Split voting into multiple rounds to make it more realistic
+    // Some AIs vote quickly, others take time to think
+    const quickVoters = aiPlayers.filter(p => p.personality?.type === 'impulsive');
+    const normalVoters = aiPlayers.filter(p => p.personality?.type === 'strategic');
+    const slowVoters = aiPlayers.filter(p => p.personality?.type === 'cautious');
+    
+    // Process quick voters first (1-2 seconds)
+    for (const aiPlayer of quickVoters) {
+      const delay = 1000 + Math.floor(Math.random() * 1000);
       await new Promise(resolve => setTimeout(resolve, delay));
       
       const voteTarget = aiPlayer.makeVotingDecision(gameState);
-      console.log(`AI ${aiPlayer.name} voting for: ${voteTarget}`);
+      console.log(`AI ${aiPlayer.name} (quick) voting for: ${voteTarget}`);
       
       gameState.handleVote(aiPlayer.id, voteTarget);
+    }
+    
+    // Process normal voters next (2-4 seconds)
+    for (const aiPlayer of normalVoters) {
+      const delay = 2000 + Math.floor(Math.random() * 2000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      const voteTarget = aiPlayer.makeVotingDecision(gameState);
+      console.log(`AI ${aiPlayer.name} (normal) voting for: ${voteTarget}`);
+      
+      gameState.handleVote(aiPlayer.id, voteTarget);
+    }
+    
+    // Process slow voters last (3-6 seconds)
+    for (const aiPlayer of slowVoters) {
+      const delay = 3000 + Math.floor(Math.random() * 3000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      const voteTarget = aiPlayer.makeVotingDecision(gameState);
+      console.log(`AI ${aiPlayer.name} (slow) voting for: ${voteTarget}`);
+      
+      gameState.handleVote(aiPlayer.id, voteTarget);
+    }
+  }
+
+  /**
+   * Update AI knowledge after each phase
+   * @param {Object} gameState - Current game state 
+   */
+  updateAIKnowledge(gameState) {
+    // Find all AI players
+    const aiPlayers = Object.values(gameState.players)
+      .filter(p => p.isAI);
+    
+    // Update each AI's memory with game events
+    for (const aiPlayer of aiPlayers) {
+      aiPlayer.updateMemory(gameState);
     }
   }
 
@@ -124,6 +218,7 @@ class AIManager {
   reset() {
     this.usedNames = new Set();
     this.aiCount = 0;
+    this.aiPlayers = {};
   }
 }
 

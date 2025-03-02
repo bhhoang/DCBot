@@ -20,7 +20,7 @@ class Werewolf extends BaseRole {
     
     // Add list of other werewolves if there are any
     const werewolves = Object.values(gameState.players)
-      .filter(p => p.role === this.id && p.id !== player.id)
+      .filter(p => p.role === this.id && p.id !== player.id && p.role === "CURSED_WEREWOLF")
       .map(p => p.name);
     
     if (werewolves.length > 0) {
@@ -39,9 +39,13 @@ class Werewolf extends BaseRole {
       .setDescription(`Đã đến lượt hành động của bạn. Hãy chọn một người chơi để tấn công.`)
       .setColor("#2f3136");
     
+    // Get ALL alive players who aren't werewolves - make sure this works correctly
     const targets = Object.values(gameState.players).filter(p => 
-      p.isAlive && p.role !== this.id // Werewolves can't target other werewolves
+      p.isAlive && p.role !== "WEREWOLF" && p.role !== "CURSED_WEREWOLF"
     );
+    
+    console.log(`[DEBUG] Werewolf attack - Found ${targets.length} possible targets:`);
+    targets.forEach(t => console.log(`- ${t.name} (${t.role})`));
     
     if (targets.length === 0) {
       return { embed, components: [] };
@@ -51,7 +55,9 @@ class Werewolf extends BaseRole {
       .setCustomId(`${CUSTOM_ID.ACTION_PREFIX}${player.id}`)
       .setPlaceholder('Chọn nạn nhân...');
     
+    // Add ALL targets to the menu - make sure we're adding all options
     targets.forEach(target => {
+      // console.log(`[DEBUG] Adding target option: ${target.name}`);
       selectMenu.addOptions({
         label: target.name,
         value: target.id,
@@ -59,6 +65,7 @@ class Werewolf extends BaseRole {
       });
     });
     
+    // Make sure this row is properly created
     const row = new ActionRowBuilder().addComponents(selectMenu);
     
     return { embed, components: [row] };
