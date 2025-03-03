@@ -249,8 +249,8 @@ class WerewolfGame {
     return {
       WEREWOLF: 1,
       CURSED_WEREWOLF: 0,  // Add this line
-      VILLAGER: 3,
-      SEER: 0,
+      VILLAGER: 2,
+      SEER: 1,
       BODYGUARD: 0,
       WITCH: 0,
       HUNTER: 0
@@ -1326,15 +1326,13 @@ class WerewolfGame {
     await this.channel.send({ embeds: [embed] });
 
     // Send information to Seer if they used their ability
-    await this.reportSeerResult();
+    // await this.reportSeerResult();
   }
 
   /**
    * Report the result of the Seer's night action
    */
   async reportSeerResult() {
-    // COMPLETELY FIXED: Complete rewrite to use the new tracking system
-    
     // Initialize tracker if needed
     if (!this.seerTracker) {
       this.seerTracker = new SeerResultTracker();
@@ -1368,61 +1366,58 @@ class WerewolfGame {
         continue;
       }
       
-      // Check if this seer has a pending result
-      if (this.seerTracker.hasPendingResults(this.day, seer.id)) {
-        // Get the target from the previous night
-        const targetDay = this.day - 1;
-        const targetId = this.seerTracker.getTarget(targetDay, seer.id);
-        
-        if (!targetId) {
-          console.log(`[SEER] No target found for seer ${seer.name} from night ${targetDay}`);
-          continue;
-        }
-        
-        const target = this.players[targetId];
-        if (!target) {
-          console.log(`[SEER] Target ${targetId} not found in players list`);
-          continue;
-        }
-        
-        console.log(`[SEER] Reporting result for seer ${seer.name}, night ${targetDay}, target: ${target.name} (${target.role})`);
-        
-        try {
-          // Send the result to the seer
-          const seerRole = getRole("SEER");
-          if (seerRole && typeof seerRole.sendSeerResult === 'function') {
-            await seerRole.sendSeerResult(this, seer, target);
-            
-            // Mark as delivered so we don't send it again
-            this.seerTracker.markDelivered(this.day, seer.id);
-            console.log(`[SEER] Successfully sent result to ${seer.name} for target ${target.name}`);
+      // CHANGE THIS LINE: Use current day instead of previous day
+      const targetDay = this.day;
+      
+      // Get the target from the current night
+      const targetId = this.seerTracker.getTarget(targetDay, seer.id);
+      
+      if (!targetId) {
+        console.log(`[SEER] No target found for seer ${seer.name} from night ${targetDay}`);
+        continue;
+      }
+      
+      const target = this.players[targetId];
+      if (!target) {
+        console.log(`[SEER] Target ${targetId} not found in players list`);
+        continue;
+      }
+      
+      console.log(`[SEER] Reporting result for seer ${seer.name}, night ${targetDay}, target: ${target.name} (${target.role})`);
+      
+      try {
+        // Send the result to the seer
+        const seerRole = getRole("SEER");
+        if (seerRole && typeof seerRole.sendSeerResult === 'function') {
+          await seerRole.sendSeerResult(this, seer, target);
+          
+          // Mark as delivered so we don't send it again
+          this.seerTracker.markDelivered(this.day, seer.id);
+          console.log(`[SEER] Successfully sent result to ${seer.name} for target ${target.name}`);
+        } else {
+          // Fallback implementation if the role method isn't available
+          const embed = new EmbedBuilder()
+            .setTitle(`👁️ Kết Quả Tiên Tri`)
+            .setDescription(`Bạn đã tiên tri **${target.name}**`)
+            .setColor("#9b59b6");
+  
+          // Check if target is a werewolf
+          const isWerewolf = target.role === "WEREWOLF" || target.role === "CURSED_WEREWOLF";
+  
+          if (isWerewolf) {
+            embed.addFields({ name: "Kết Quả", value: "Người chơi này là **Ma Sói**! 🐺" });
           } else {
-            // Fallback if the role method isn't available
-            const embed = new EmbedBuilder()
-              .setTitle(`👁️ Kết Quả Tiên Tri`)
-              .setDescription(`Bạn đã tiên tri **${target.name}**`)
-              .setColor("#9b59b6");
-  
-            // Check if target is a werewolf
-            const isWerewolf = target.role === "WEREWOLF" || target.role === "CURSED_WEREWOLF";
-  
-            if (isWerewolf) {
-              embed.addFields({ name: "Kết Quả", value: "Người chơi này là **Ma Sói**! 🐺" });
-            } else {
-              embed.addFields({ name: "Kết Quả", value: "Người chơi này **không phải** Ma Sói. ✅" });
-            }
-  
-            await seer.user.send({ embeds: [embed] });
-            
-            // Mark as delivered
-            this.seerTracker.markDelivered(this.day, seer.id);
-            console.log(`[SEER] Successfully sent result to ${seer.name} (fallback method)`);
+            embed.addFields({ name: "Kết Quả", value: "Người chơi này **không phải** Ma Sói. ✅" });
           }
-        } catch (error) {
-          console.error(`[SEER] Failed to send result to ${seer.name}:`, error);
+  
+          await seer.user.send({ embeds: [embed] });
+          
+          // Mark as delivered
+          this.seerTracker.markDelivered(this.day, seer.id);
+          console.log(`[SEER] Successfully sent result to ${seer.name} (fallback method)`);
         }
-      } else {
-        console.log(`[SEER] No pending results for seer ${seer.name} on day ${this.day}`);
+      } catch (error) {
+        console.error(`[SEER] Failed to send result to ${seer.name}:`, error);
       }
     }
   }

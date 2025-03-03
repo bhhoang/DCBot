@@ -2,6 +2,7 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const BaseRole = require('./baseRole');
 const { NIGHT_PHASE, TEAM, CUSTOM_ID } = require('../constants');
+const SeerResultTracker = require('../utils/seerTracker');
 
 class Seer extends BaseRole {
   constructor() {
@@ -60,7 +61,15 @@ class Seer extends BaseRole {
    * @returns {Object} Action result
    */
   processNightAction(gameState, playerId, targetId) {
-    // Store the target ID in game state
+    // Initialize seerTracker if needed
+    if (!gameState.seerTracker) {
+      gameState.seerTracker = new SeerResultTracker();
+    }
+    
+    // Record this action in the tracker
+    gameState.seerTracker.recordAction(gameState.day, playerId, targetId);
+    
+    // Also store the target ID in game state for backward compatibility
     gameState.nightActions.seerTarget = targetId;
     
     // FIXED: Store with day information to prevent day tracking issues
