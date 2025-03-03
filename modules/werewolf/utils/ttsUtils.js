@@ -16,6 +16,12 @@ const activeConnections = new Map();
  */
 async function speak(channel, text, language = 'vi') {
   try {
+    // FIXED: Skip if text is empty or undefined
+    if (!text || text.trim() === '') {
+      console.log('[DEBUG-TTS] Empty text received, skipping TTS');
+      return;
+    }
+    
     if (!channel) {
       console.error('Cannot speak: No voice channel provided');
       return;
@@ -171,9 +177,19 @@ function formatTextForTTS(text) {
  * Get the narrative announcement for a specific night phase/role
  * @param {string} roleId - The role ID for the current phase
  * @param {number} day - Current game day
+ * @param {Object} gameState - Optional game state for checking role existence
  * @returns {string} - Thematic narrative announcement
  */
-function getNightPhaseAnnouncement(roleId, day) {
+function getNightPhaseAnnouncement(roleId, day, gameState = null) {
+  // FIXED: If gameState is provided, check if there are actually players with this role
+  if (gameState && roleId) {
+    const playersWithRole = gameState.getAlivePlayersWithRole(roleId);
+    if (playersWithRole.length === 0) {
+      console.log(`[DEBUG-TTS] Skipping announcement for ${roleId} - no alive players with this role`);
+      return '';  // Return empty string to skip announcement
+    }
+  }
+  
   const dayText = convertNumberToVietnamese(day);
   
   switch (roleId) {
@@ -235,8 +251,18 @@ function getGameAnnouncementText(game, type) {
       break;
 
     case 'night-phase':
-      // This is for specific role announcements during night
-      text = getNightPhaseAnnouncement(game.nightPhase, game.day);
+      // FIXED: Check if the current phase has any alive players
+      const hasPlayersWithRole = game.nightPhase && 
+        game.getAlivePlayersWithRole(game.nightPhase).length > 0;
+      
+      if (hasPlayersWithRole) {
+        // This is for specific role announcements during night
+        text = getNightPhaseAnnouncement(game.nightPhase, game.day);
+      } else {
+        // If no players with this role, don't make a specific announcement
+        console.log(`[DEBUG-TTS] Skipping announcement for ${game.nightPhase} - no alive players with this role`);
+        text = '';
+      }
       break;
 
     case 'day-start':

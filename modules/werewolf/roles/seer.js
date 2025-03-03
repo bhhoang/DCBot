@@ -63,19 +63,21 @@ class Seer extends BaseRole {
     // Store the target ID in game state
     gameState.nightActions.seerTarget = targetId;
     
+    // FIXED: Store with day information to prevent day tracking issues
     // Also store in a more persistent way
     if (!gameState.seerResults) {
       gameState.seerResults = {};
     }
     
-    // Store by day and player ID
+    // Store by day and player ID - using the CURRENT day
+    // This is important because we're IN night phase of the current day
     if (!gameState.seerResults[gameState.day]) {
       gameState.seerResults[gameState.day] = {};
     }
     
     gameState.seerResults[gameState.day][playerId] = targetId;
     
-    console.log(`Storing seer result for day ${gameState.day}, seer ${playerId}, target: ${targetId}`);
+    console.log(`[DEBUG-SEER] Storing seer result for day ${gameState.day}, seer ${playerId}, target: ${targetId}`);
     
     const target = gameState.players[targetId];
     
@@ -98,8 +100,8 @@ class Seer extends BaseRole {
       .setDescription(`Bạn đã tiên tri **${target.name}**`)
       .setColor("#9b59b6");
     
-    // Check if target is a werewolf
-    const isWerewolf = target.role === "WEREWOLF";
+    // FIXED: Check for both werewolf types
+    const isWerewolf = target.role === "WEREWOLF" || target.role === "CURSED_WEREWOLF";
     
     if (isWerewolf) {
       embed.addFields({ name: "Kết Quả", value: "Người chơi này là **Ma Sói**! 🐺" });
@@ -109,6 +111,7 @@ class Seer extends BaseRole {
     
     try {
       await seer.user.send({ embeds: [embed] });
+      console.log(`[DEBUG-SEER] Successfully sent seer result to ${seer.name} about ${target.name} (${isWerewolf ? 'IS' : 'NOT'} werewolf)`);
       return { success: true };
     } catch (error) {
       console.error(`Failed to send seer result to ${seer.name}:`, error);

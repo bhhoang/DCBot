@@ -114,36 +114,54 @@ class AIManager {
    * @param {Object} gameState - Current game state
    * @param {string} currentPhase - Current night phase
    */
-  async processAINightActions(gameState, currentPhase) {
-    // Find all alive AI players with the current role
-    const aiPlayers = Object.values(gameState.players)
+  /**
+ * Process night actions for all AI players
+ * @param {Object} gameState - Current game state
+ * @param {string} currentPhase - Current night phase
+ */
+ async processAINightActions(gameState, currentPhase) {
+  // Find all alive AI players with the current role
+  // FIXED: Special handling for werewolf phase to include cursed werewolves
+  let aiPlayers;
+  
+  if (currentPhase === 'WEREWOLF') {
+    // Include both regular and cursed werewolves in werewolf phase
+    aiPlayers = Object.values(gameState.players)
+      .filter(p => p.isAI && p.isAlive && (p.role === 'WEREWOLF' || p.role === 'CURSED_WEREWOLF'));
+    
+    console.log(`[DEBUG-AI] Processing night actions for ${aiPlayers.length} werewolf AI players (including cursed werewolves)`);
+  } else {
+    // Normal case for other roles
+    aiPlayers = Object.values(gameState.players)
       .filter(p => p.isAI && p.isAlive && p.role === currentPhase);
     
     console.log(`Processing night actions for ${aiPlayers.length} AI players with role ${currentPhase}`);
+  }
+  
+  // Have each AI player perform their night action
+  for (const aiPlayer of aiPlayers) {
+    // Add realistic delay between AI decisions (varies by personality)
+    const baseDelay = aiPlayer.personality?.type === 'impulsive' ? 1000 : 2000;
+    const randomFactor = Math.floor(Math.random() * 2000);
+    const delay = baseDelay + randomFactor;
     
-    // Have each AI player perform their night action
-    for (const aiPlayer of aiPlayers) {
-      // Add realistic delay between AI decisions (varies by personality)
-      const baseDelay = aiPlayer.personality?.type === 'impulsive' ? 1000 : 2000;
-      const randomFactor = Math.floor(Math.random() * 2000);
-      const delay = baseDelay + randomFactor;
+    // Wait before making a decision
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    const actionResult = await aiPlayer.performNightAction(gameState);
+    
+    if (actionResult.success) {
+      // Directly call the game's handleNightAction with the AI's decision
+      const targetId = actionResult.targetId || actionResult.action;
       
-      // Wait before making a decision
-      await new Promise(resolve => setTimeout(resolve, delay));
-      
-      const actionResult = await aiPlayer.performNightAction(gameState);
-      
-      if (actionResult.success) {
-        // Directly call the game's handleNightAction with the AI's decision
-        const targetId = actionResult.targetId || actionResult.action;
-        
-        if (targetId) {
-          console.log(`AI ${aiPlayer.name} (${aiPlayer.role}) choosing target: ${targetId}`);
-          gameState.handleNightAction(aiPlayer.id, targetId);
-        }
+      if (targetId) {
+        console.log(`AI ${aiPlayer.name} (${aiPlayer.role}) choosing target: ${targetId}`);
+        gameState.handleNightAction(aiPlayer.id, targetId);
       }
     }
   }
+}
+
 
 
   /**

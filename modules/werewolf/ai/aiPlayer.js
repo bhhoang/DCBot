@@ -220,15 +220,24 @@ class AIPlayer {
     if (possibleTargets.length === 0) return { success: true, targetId: null };
     
     // Check if we're a cursed werewolf with unused curse
-    if (this.role === 'CURSED_WEREWOLF' && 
-        gameState.cursedWerewolfState && 
-        gameState.cursedWerewolfState[this.id] &&
-        !gameState.cursedWerewolfState[this.id].curseUsed) {
+    if (this.role === 'CURSED_WEREWOLF') {
+      // Initialize cursed werewolf state if needed
+      if (!gameState.cursedWerewolfState) {
+        gameState.cursedWerewolfState = {};
+      }
       
-      // Decide whether to use curse or attack
+      if (!gameState.cursedWerewolfState[this.id]) {
+        gameState.cursedWerewolfState[this.id] = {
+          curseUsed: false
+        };
+      }
+      
       const curseProbability = 0.7; // 70% chance to use curse if available
+      const curseNotUsed = !gameState.cursedWerewolfState[this.id].curseUsed;
       
-      if (Math.random() < curseProbability) {
+      console.log(`[DEBUG-AI] Cursed Werewolf ${this.name} making decision, curse used: ${!curseNotUsed}`);
+      
+      if (curseNotUsed && Math.random() < curseProbability) {
         // Choose strategic target for curse:
         // Prioritize players who seem "trusted" by the village
         let bestCurseTarget = null;
@@ -243,8 +252,13 @@ class AIPlayer {
         }
         
         if (bestCurseTarget) {
+          console.log(`[DEBUG-AI] Cursed Werewolf ${this.name} using curse on ${bestCurseTarget.name}`);
           return { success: true, targetId: `curse_${bestCurseTarget.id}` };
         }
+      } else if (curseNotUsed) {
+        console.log(`[DEBUG-AI] Cursed Werewolf ${this.name} decided not to use curse this time`);
+      } else {
+        console.log(`[DEBUG-AI] Cursed Werewolf ${this.name} already used curse, making attack decision`);
       }
     }
     
@@ -253,13 +267,27 @@ class AIPlayer {
     // Target Seer with high priority
     const possibleSeers = possibleTargets.filter(p => p.role === 'SEER');
     if (possibleSeers.length > 0) {
-      return { success: true, targetId: possibleSeers[0].id };
+      const targetId = possibleSeers[0].id;
+      
+      // FIXED: Format output based on role
+      if (this.role === 'CURSED_WEREWOLF') {
+        return { success: true, targetId: `attack_${targetId}` };
+      } else {
+        return { success: true, targetId: targetId };
+      }
     }
     
     // Target Bodyguard next
     const possibleBodyguards = possibleTargets.filter(p => p.role === 'BODYGUARD');
     if (possibleBodyguards.length > 0) {
-      return { success: true, targetId: possibleBodyguards[0].id };
+      const targetId = possibleBodyguards[0].id;
+      
+      // FIXED: Format output based on role
+      if (this.role === 'CURSED_WEREWOLF') {
+        return { success: true, targetId: `attack_${targetId}` };
+      } else {
+        return { success: true, targetId: targetId };
+      }
     }
     
     // Otherwise, target players with high suspicion of others (likely influential villagers)
@@ -273,14 +301,26 @@ class AIPlayer {
     
     // 70% chance to pick highest threat, 30% chance for random
     if (targetsByThreatLevel.length > 0 && Math.random() < 0.7) {
-      return { success: true, targetId: targetsByThreatLevel[0].id };
+      const targetId = targetsByThreatLevel[0].id;
+      
+      // FIXED: Format output based on role
+      if (this.role === 'CURSED_WEREWOLF') {
+        return { success: true, targetId: `attack_${targetId}` };
+      } else {
+        return { success: true, targetId: targetId };
+      }
     }
     
     // Fallback to random target
     const targetIndex = Math.floor(Math.random() * possibleTargets.length);
-    const target = possibleTargets[targetIndex];
+    const targetId = possibleTargets[targetIndex].id;
     
-    return { success: true, targetId: target.id };
+    // FIXED: Format output based on role
+    if (this.role === 'CURSED_WEREWOLF') {
+      return { success: true, targetId: `attack_${targetId}` };
+    } else {
+      return { success: true, targetId: targetId };
+    }
   }
 
   /**

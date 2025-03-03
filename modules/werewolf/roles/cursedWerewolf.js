@@ -97,11 +97,11 @@ class CursedWerewolf extends Werewolf {
       });
     } else {
       console.log(`[DEBUG] Adding only attack options (curse already used)`);
-      // If curse has been used, only offer attack options
+      // If curse has been used, only offer attack options - FIXED: Use attack_ prefix consistently
       targets.forEach(target => {
         selectMenu.addOptions({
           label: `Tấn công ${target.name}`,
-          value: target.id,
+          value: `attack_${target.id}`, // FIXED: Added attack_ prefix for consistency
           description: `Tấn công ${target.name}`,
           emoji: "🐺"
         });
@@ -135,7 +135,7 @@ class CursedWerewolf extends Werewolf {
     const player = gameState.players[playerId];
     const playerState = gameState.cursedWerewolfState[playerId];
     let targetPlayerId;
-    let actionType = "attack";
+    let actionType = "attack"; // Default to attack
     
     console.log(`Cursed Werewolf action received: ${targetId}`);
     
@@ -156,12 +156,16 @@ class CursedWerewolf extends Werewolf {
       
       console.log(`Curse state updated for ${playerId}, marked as used`);
     } 
-    // Check if this is an attack action
-    else if (targetId && targetId.startsWith("attack_")) {
-      targetPlayerId = targetId.replace("attack_", "");
+    // Check if this is an attack action - works for both prefixed and unprefixed versions
+    else if (targetId && (targetId.startsWith("attack_") || !targetId.includes("_"))) {
+      // Extract the target ID, removing the prefix if it exists
+      targetPlayerId = targetId.startsWith("attack_") ? targetId.replace("attack_", "") : targetId;
       console.log(`This is an attack action targeting ${targetPlayerId}`);
-    } 
-    // Regular target ID (when curse already used or for some reason)
+      
+      // Make sure we set action type to attack
+      actionType = "attack";
+    }
+    // Fallback for any other format (though we shouldn't get here)
     else {
       targetPlayerId = targetId;
       console.log(`Processing as regular target ID: ${targetPlayerId}`);
@@ -173,10 +177,12 @@ class CursedWerewolf extends Werewolf {
     }
     
     if (actionType === "attack") {
-      // For attack action, store vote like a normal werewolf
+      // FIXED: Store just the targetPlayerId (without prefix) for attack
       gameState.nightActions.werewolfVotes[playerId] = targetPlayerId;
       
       const target = gameState.players[targetPlayerId];
+      console.log(`[DEBUG] Stored werewolf vote from ${player.name} for ${target?.name || targetPlayerId}`);
+      
       return { 
         success: true, 
         message: `Bạn đã chọn tấn công ${target ? target.name : targetPlayerId}.`

@@ -78,8 +78,15 @@ function createCountdownEmbed(seconds, phase) {
 function createVotingMessage(game) {
   const embed = new EmbedBuilder()
     .setTitle(`🗳️ Bỏ Phiếu - Ngày ${game.day}`)
-    .setDescription("Đã đến lúc bỏ phiếu! Ai sẽ bị treo cổ hôm nay?")
+    .setDescription("Đã đến lúc bỏ phiếu! Ai sẽ bị treo cổ hôm nay? LƯU Ý: Bạn chỉ được chọn một lần.")
     .setColor("#e74c3c");
+
+  // FIXED: Add debug log to verify vote counts before creating buttons
+  const voteDebug = Object.values(game.players)
+    .filter(p => p.isAlive)
+    .map(p => `${p.name}: ${p.voteCount} votes, hasVoted=${p.hasVoted}`)
+    .join('\n');
+  console.log(`[DEBUG-VOTING] Current vote status before creating voting UI:\n${voteDebug}`);
 
   // Create voting buttons
   const rows = [];
@@ -195,6 +202,19 @@ function createDayResultsEmbed(game) {
  * @returns {EmbedBuilder} - Embed for voting results
  */
 function createVotingResultsEmbed(game, executed, tie, maxVotes) {
+  // FIXED: Log vote status to help debug voting issues
+  console.log(`[DEBUG-VOTING] Creating voting results embed:`);
+  console.log(`- Executed: ${executed?.name || 'None'}`);
+  console.log(`- Tie: ${tie}`);
+  console.log(`- Max votes: ${maxVotes}`);
+  
+  // Log all player vote counts
+  const voteCounts = Object.values(game.players)
+    .filter(p => p.isAlive || p.voteCount > 0)
+    .map(p => `${p.name}: ${p.voteCount} votes, alive=${p.isAlive}`)
+    .join('\n');
+  console.log(`[DEBUG-VOTING] Player vote counts:\n${voteCounts}`);
+  
   // Check if we should use day-specific execution data
   let dayExecuted = executed;
   let dayTie = tie;
