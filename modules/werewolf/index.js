@@ -166,6 +166,12 @@ module.exports = {
             required: false,
             min_value: 0,
             max_value: 12
+          },
+          {
+            name: "ai_discussions",
+            description: "Bật/tắt hội thoại tự động của Bot (mặc định: bật)",
+            type: 5, // BOOLEAN
+            required: false
           }
         ]
       },
@@ -209,6 +215,12 @@ module.exports = {
             required: false,
             min_value: 0,
             max_value: 12
+          },
+          {
+            name: "ai_discussions",
+            description: "Bật/tắt hội thoại tự động của Bot (mặc định: bật)",
+            type: 5, // BOOLEAN
+            required: false
           }
         ]
       },

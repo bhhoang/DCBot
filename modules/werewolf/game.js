@@ -240,6 +240,7 @@ class WerewolfGame {
     this.roleDistribution = this._getDefaultRoleDistribution();
     this.voiceEnabled = false; // Add this flag to enable/disable TTS
     this.voiceChannel = null; // Store the voice channel for TTS
+    this.enableAIDiscussions = true;
   }
 
   /**
@@ -248,9 +249,9 @@ class WerewolfGame {
   _getDefaultRoleDistribution() {
     return {
       WEREWOLF: 1,
-      CURSED_WEREWOLF: 0,  // Add this line
-      VILLAGER: 2,
-      SEER: 1,
+      CURSED_WEREWOLF: 0,
+      VILLAGER: 3,
+      SEER: 0,
       BODYGUARD: 0,
       WITCH: 0,
       HUNTER: 0
@@ -1114,7 +1115,7 @@ class WerewolfGame {
         protectedPlayer: this.protected
       };
     }
-  
+    
     // Process Hunter abilities at the start of day if any pending
     if (this.hunterPendingAbility && this.hunterPendingAbility.length > 0) {
       console.log(`[DEBUG-HUNTER] Processing ${this.hunterPendingAbility.length} pending Hunter abilities`);
@@ -1177,8 +1178,6 @@ class WerewolfGame {
   
     // TTS announcement for day start
     if (this.voiceEnabled && this.voiceChannel) {
-      // Pass executedPlayer for TTS announcement
-      this.executedPlayer = null; // Clear previous execution
       const dayText = ttsUtils.getGameAnnouncementText(this, 'day-start');
       await ttsUtils.speak(this.voiceChannel, dayText);
     }
@@ -1188,6 +1187,8 @@ class WerewolfGame {
       await this.endGame();
       return;
     }
+    
+    await this.processAIDiscussions();
   
     // Start countdown timer for discussion phase
     const discussionTime = 90; // 1.5 minutes in seconds
@@ -1211,6 +1212,151 @@ class WerewolfGame {
     }
   }
 
+  // Updated processAIDiscussions method to use the enhanced discussion system
+// Add this to the WerewolfGame class in modules/werewolf/game.js
+
+/**
+ * Process AI discussions during day phase
+ * This should be called in the startDay method before the startCountdown call
+ */
+async processAIDiscussions() {
+  // Skip if disabled
+  if (!this.enableAIDiscussions) {
+    console.log("[DEBUG-AI-DISCUSSION] AI discussions are disabled, skipping");
+    return;
+  }
+  
+  // Skip if no AI players
+  const aiPlayers = Object.values(this.players).filter(p => p.isAI && p.isAlive);
+  if (aiPlayers.length === 0) {
+    console.log("[DEBUG-AI-DISCUSSION] No AI players alive, skipping discussions");
+    return;
+  }
+
+  console.log(`[DEBUG-AI-DISCUSSION] Starting AI discussions with ${aiPlayers.length} AI players`);
+  
+  try {
+    // Try to use Gemini API if available
+    let useGemini = false;
+    let geminiModule;
+    try {
+      geminiModule = require('./ai/geminiDiscussion');
+      useGemini = true;
+      console.log("[DEBUG-AI-DISCUSSION] Using Gemini API for enhanced discussions");
+    } catch (error) {
+      console.log("[DEBUG-AI-DISCUSSION] Gemini API module not available, using standard discussions");
+      useGemini = false;
+    }
+    
+    // Get the standard AI discussion module as fallback
+    const aiDiscussion = require('./ai/aiDiscussion');
+    
+    // Reset discussion history at the start of each day
+    if (typeof aiDiscussion.resetMessageHistory === 'function') {
+      aiDiscussion.resetMessageHistory();
+    }
+    
+    // Send introduction message
+    await this.channel.send("**🔊 Cuộc thảo luận của dân làng bắt đầu:**");
+    
+    // Update AI knowledge based on discussions
+    if (require('./ai/aiManager').updateAIKnowledge) {
+      require('./ai/aiManager').updateAIKnowledge(this);
+    }
+    
+    // Generate discussion messages
+    let discussionMessages;
+    
+    // Try to use Gemini API if available
+    if (useGemini && typeof geminiModule.createGeminiThreadedDiscussion === 'function') {
+      discussionMessages = await geminiModule.createGeminiThreadedDiscussion(this);
+    } 
+    // Otherwise, use the standard discussion system
+    else if (typeof aiDiscussion.createThreadedDiscussion === 'function') {
+      discussionMessages = aiDiscussion.createThreadedDiscussion(this);
+    } else {
+      // Fallback to old system
+      console.log("[DEBUG-AI-DISCUSSION] Using basic discussion system");
+      
+      // Determine how many discussion rounds based on player count
+      const aliveCount = this.getAlivePlayers().length;
+      
+      // Calculate number of rounds (1-3 based on player count)
+      const discussionRounds = Math.min(3, Math.max(1, Math.ceil(aliveCount / 4)));
+      
+      // Collect all messages from all rounds
+      discussionMessages = [];
+      
+      // Process each round with a delay between
+      for (let round = 1; round <= discussionRounds; round++) {
+        // Generate messages for all AI players
+        const roundMessages = aiDiscussion.generateAIDiscussions(this, round);
+        discussionMessages = discussionMessages.concat(roundMessages);
+      }
+    }
+    
+    // If no messages were generated, skip
+    if (!discussionMessages || discussionMessages.length === 0) {
+      console.log("[DEBUG-AI-DISCUSSION] No discussion messages generated");
+      return;
+    }
+    
+    console.log(`[DEBUG-AI-DISCUSSION] Generated ${discussionMessages.length} total discussion messages`);
+    
+    // Send messages with delay between each
+    for (const msg of discussionMessages) {
+      const player = this.players[msg.playerId];
+      if (!player || !player.isAlive) continue;
+      
+      // Skip if game is no longer in day phase
+      if (this.state !== 'DAY') {
+        console.log("[DEBUG-AI-DISCUSSION] Game state changed, stopping discussions");
+        break;
+      }
+      
+      // Get message and player info
+      const { message, playerName, isResponse, responseToId } = msg;
+      
+      try {
+        // Add formatting for responses to make conversation more clear
+        let formattedMessage;
+        if (isResponse) {
+          if (responseToId && this.players[responseToId]) {
+            const respondingTo = this.players[responseToId].name;
+            formattedMessage = `**${playerName}** *(đáp lại ${respondingTo})*: ${message}`; 
+          } else {
+            formattedMessage = `**${playerName}**: *${message}*`; // Italics for responses
+          }
+        } else {
+          formattedMessage = `**${playerName}**: ${message}`;
+        }
+        
+        await this.channel.send(formattedMessage);
+        
+        // Random delay between messages based on length and type
+        // Responses are quicker, longer messages take more time
+        const baseDelay = isResponse ? 1000 : 2000;
+        const lengthFactor = Math.min(2000, message.length * 20);
+        const randomFactor = Math.floor(Math.random() * 1000);
+        const delay = baseDelay + (lengthFactor / 20) + randomFactor;
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } catch (error) {
+        console.error("[ERROR-AI-DISCUSSION] Failed to send message:", error);
+      }
+    }
+    
+    // Send a conclusion message
+    if (this.state === 'DAY') {
+      await this.channel.send("**🔊 Cuộc thảo luận kết thúc, chuẩn bị bỏ phiếu...**");
+    }
+    
+    console.log("[DEBUG-AI-DISCUSSION] AI discussions completed");
+    
+  } catch (error) {
+    console.error("[ERROR-AI-DISCUSSION] Error in AI discussions:", error);
+  }
+}
 
   /**
    * Start a countdown timer that updates in real-time

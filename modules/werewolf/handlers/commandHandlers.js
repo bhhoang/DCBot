@@ -27,7 +27,6 @@ async function handleVoiceCommand(source, activeGames, isLegacy = false) {
       });
     }
   }
-  
   const user = isLegacy ? source.author : source.user;
   
   // Check if user is in a voice channel
@@ -95,8 +94,9 @@ async function handleVoiceCommand(source, activeGames, isLegacy = false) {
  * @param {Map} activeGames - Map of active games
  * @param {boolean} isLegacy - Whether this is a legacy command
  * @param {boolean} useVoice - Whether to use voice features
+ * @param {boolean|null} aiDiscussions - Whether to enable AI discussions (null = use default)
  */
-async function handleCreateCommand(source, bot, activeGames, isLegacy = false, useVoice = false) {
+async function handleCreateCommand(source, bot, activeGames, isLegacy = false, useVoice = false, aiDiscussions = null) {
   const channelId = source.channelId;
 
   // Check if there's already a game in this channel
@@ -139,6 +139,12 @@ async function handleCreateCommand(source, bot, activeGames, isLegacy = false, u
 
   // Add the host to the game
   game.addPlayer(isLegacy ? source.author : source.user);
+
+  // NEW: Set AI discussions option if provided
+  if (aiDiscussions !== null) {
+    game.enableAIDiscussions = aiDiscussions;
+    console.log(`[DEBUG] AI discussions ${aiDiscussions ? 'enabled' : 'disabled'} for new game`);
+  }
 
   // Connect to voice channel if requested
   if (useVoice && voiceChannel) {
@@ -234,8 +240,9 @@ async function handleJoinCommand(source, activeGames, isLegacy = false) {
  * @param {Map} activeGames - Map of active games
  * @param {boolean} isLegacy - Whether this is a legacy command
  * @param {number} aiPlayerCount - Number of AI players to add (optional)
+ * @param {boolean|null} aiDiscussions - Whether to enable AI discussions (null = use default)
  */
-async function handleStartCommand(source, activeGames, isLegacy = false, aiPlayerCount = 0) {
+async function handleStartCommand(source, activeGames, isLegacy = false, aiPlayerCount = 0, aiDiscussions = null) {
   const channelId = source.channelId;
   const game = activeGames.get(channelId);
 
@@ -283,6 +290,12 @@ async function handleStartCommand(source, activeGames, isLegacy = false, aiPlaye
     await source.deferReply();
   }
 
+  // NEW: Set AI discussions option if provided
+  if (aiDiscussions !== null && game) {
+    game.enableAIDiscussions = aiDiscussions;
+    console.log(`[DEBUG] AI discussions ${aiDiscussions ? 'enabled' : 'disabled'} for game start`);
+  }
+
   const result = await game.start(aiPlayerCount);
 
   if (result.success) {
@@ -292,6 +305,11 @@ async function handleStartCommand(source, activeGames, isLegacy = false, aiPlaye
     const aiPlayers = Object.values(game.players).filter(p => p.isAI);
     if (aiPlayers.length > 0) {
       response += `\n\n${aiPlayers.length} Bot đã tham gia để đủ số lượng người chơi.`;
+      
+      // Add info about AI discussions
+      if (game.enableAIDiscussions) {
+        response += "\nBot sẽ tự động thảo luận trong pha ban ngày.";
+      }
     }
 
     if (isLegacy) {
@@ -410,16 +428,18 @@ async function handleSlashCommand(interaction, bot, activeGames) {
   const action = interaction.options.getString("action") || "create";
   // Get AI player count if provided
   const aiPlayerCount = interaction.options.getInteger("bots") || 0;
+  // NEW: Get AI discussions setting if provided
+  const aiDiscussions = interaction.options.getBoolean("ai_discussions");
   
   switch (action) {
     case "create":
-      await handleCreateCommand(interaction, bot, activeGames);
+      await handleCreateCommand(interaction, bot, activeGames, false, false, aiDiscussions);
       break;
     case "join":
       await handleJoinCommand(interaction, activeGames);
       break;
     case "start":
-      await handleStartCommand(interaction, activeGames, false, aiPlayerCount);
+      await handleStartCommand(interaction, activeGames, false, aiPlayerCount, aiDiscussions);
       break;
     case "cancel":
       await handleCancelCommand(interaction, activeGames);
@@ -438,7 +458,6 @@ async function handleSlashCommand(interaction, bot, activeGames) {
   }
 }
 
-
 /**
  * Handle legacy command
  * @param {Message} message - Discord message
@@ -451,18 +470,32 @@ async function handleLegacyCommand(message, args, bot, activeGames) {
   
   // Check if there's a number parameter for AI players
   let aiPlayerCount = 0;
+  // Initialize aiDiscussions variable here - this was missing
+  let aiDiscussions = null;
+  
   for (let i = 1; i < args.length; i++) {
+    // Check for numeric arg (bot count)
     const num = parseInt(args[i]);
     if (!isNaN(num) && num > 0) {
       aiPlayerCount = num;
-      break;
+    }
+    
+    // Check for discussions flags
+    if (args[i].toLowerCase() === "discussions:on" || 
+        args[i].toLowerCase() === "discussions:true") {
+      aiDiscussions = true;
+    } else if (args[i].toLowerCase() === "discussions:off" || 
+              args[i].toLowerCase() === "discussions:false") {
+      aiDiscussions = false;
     }
   }
+  
+  console.log(`[LEGACY CMD] Action: ${action}, Bots: ${aiPlayerCount}, Discussions: ${aiDiscussions}`);
   
   switch (action) {
     case "create":
     case "tao":
-      await handleCreateCommand(message, bot, activeGames, true);
+      await handleCreateCommand(message, bot, activeGames, true, false, aiDiscussions);
       break;
     case "join":
     case "thamgia":
@@ -470,7 +503,7 @@ async function handleLegacyCommand(message, args, bot, activeGames) {
       break;
     case "start":
     case "batdau":
-      await handleStartCommand(message, activeGames, true, aiPlayerCount);
+      await handleStartCommand(message, activeGames, true, aiPlayerCount, aiDiscussions);
       break;
     case "cancel":
     case "huy":
