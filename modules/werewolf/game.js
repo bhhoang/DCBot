@@ -1573,7 +1573,8 @@ async processAIDiscussions() {
    */
   async startVoting() {
     this.state = STATE.VOTING;
-    
+    this._votingEnded = false;
+
     // FIXED: Clear all existing votes completely
     this.votes = {};
   
@@ -1733,6 +1734,11 @@ async processAIDiscussions() {
    */
   // Modify endVoting method to add voice announcement
   async endVoting(voteMsg = null) {
+    // Guard against double execution: both the "all voted" path and the
+    // countdown callback can call this. Only the first wins.
+    if (this._votingEnded) return;
+    this._votingEnded = true;
+
     // Clear any countdown messages
     if (this.countdownMessage) {
       try {
