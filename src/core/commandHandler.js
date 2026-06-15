@@ -312,26 +312,26 @@ class CommandHandler {
       }
     }
     
-    // Check role-based permissions
-    if (command.permissions && command.permissions.length > 0) {
-      // Everyone has permission
-      if (command.permissions.includes('@everyone')) {
-        return true;
-      }
-      
-      // Check if user has any of the required roles
-      const memberRoles = member.roles.cache;
-      const hasRequiredRole = memberRoles.some(role => {
-        return command.permissions.includes(role.name) || 
-               command.permissions.includes(role.id);
-      });
-      
-      if (!hasRequiredRole) {
-        return false;
-      }
+    // Role-based permissions: DENY BY DEFAULT.
+    // A command must explicitly opt into @everyone or name allowed roles.
+    // An empty/missing permissions array means "no one" (except owner, handled above).
+    if (!command.permissions || command.permissions.length === 0) {
+      return false;
     }
-    
-    return true;
+
+    // Everyone has permission
+    if (command.permissions.includes('@everyone')) {
+      return true;
+    }
+
+    // Check if user has any of the required roles
+    const memberRoles = member.roles.cache;
+    const hasRequiredRole = memberRoles.some(role => {
+      return command.permissions.includes(role.name) ||
+             command.permissions.includes(role.id);
+    });
+
+    return hasRequiredRole;
   }
   
   /**
