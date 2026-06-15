@@ -18,7 +18,13 @@ class CommandHandler {
    */
   async registerCommands() {
     console.log('Registering commands...');
-    
+
+    // Rebuild from scratch each call so reloads don't leave stale entries.
+    this.commands.clear();
+    this.slashCommands.clear();
+    this.legacyCommands.clear();
+    this.bot.client.commands?.clear();
+
     // Get all commands from modules
     for (const module of this.bot.moduleLoader.getAllModules()) {
       if (module.commands && Array.isArray(module.commands)) {
@@ -156,13 +162,17 @@ class CommandHandler {
    * Set up command listeners
    */
   setupCommandListeners() {
+    // Bind client listeners exactly once. Reloads rebuild the command
+    // collections but must NOT re-attach listeners (that caused N+1 firing).
+    if (this._listenersBound) return;
+    this._listenersBound = true;
+
     // Handle slash commands
     this.bot.client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
-      
       await this.handleSlashCommand(interaction);
     });
-    
+
     // Handle legacy message commands if enabled
     if (this.bot.config.commands?.enableLegacyCommands) {
       this.bot.client.on('messageCreate', async message => {

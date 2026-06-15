@@ -308,16 +308,10 @@ module.exports = {
     if (bot.commandHandler && !bot.commandHandler.unregisterAllCommands) {
       bot.commandHandler.unregisterAllCommands = async function() {
         console.log("Unregistering all commands before reload");
-        // Implementation depends on your command handler structure
-        // This is a placeholder - you need to implement based on your system
-        if (typeof this.commands === 'object') {
-          this.commands.clear();
-        }
-        
-        if (Array.isArray(this.commandsList)) {
-          this.commandsList = [];
-        }
-        
+        this.commands.clear();
+        this.slashCommands.clear();
+        this.legacyCommands.clear();
+        this.bot.client.commands?.clear();
         return true;
       };
     }
@@ -325,8 +319,15 @@ module.exports = {
     if (bot.commandHandler && !bot.commandHandler.unregisterModuleCommands) {
       bot.commandHandler.unregisterModuleCommands = async function(moduleName) {
         console.log(`Unregistering commands for module: ${moduleName}`);
-        // Implementation depends on your command handler structure
-        // This is a placeholder - you need to implement based on your system
+        for (const [name, cmd] of this.commands.entries()) {
+          if (cmd.module === moduleName) {
+            this.commands.delete(name);
+            this.slashCommands.delete(name);
+            this.legacyCommands.delete(name);
+            this.legacyCommands.delete(name.toLowerCase());
+            this.bot.client.commands?.delete(name);
+          }
+        }
         return true;
       };
     }
