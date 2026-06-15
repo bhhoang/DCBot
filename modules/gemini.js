@@ -7,8 +7,9 @@ const userConversations = new Map();
 // Max conversation history entries to keep per user
 const MAX_HISTORY_LENGTH = 10;
 
-// We'll attempt to use these models in order
-const MODEL_CANDIDATES = ['gemini-1.5-pro', 'gemini-pro'];
+// Primary model, with a fallback if the primary is unavailable.
+const PRIMARY_MODEL = 'gemini-3.5-flash';
+const FALLBACK_MODEL = 'gemini-2.5-flash';
 
 module.exports = {
   meta: {
@@ -18,68 +19,40 @@ module.exports = {
     description: "Interact with Google's Gemini AI model",
     dependencies: [],
     npmDependencies: {
-      "@google/generative-ai": "^0.2.1"
+      "@google/genai": "2.8.0"
     }
   },
   
   // Module vars
-  genAI: null,
+  ai: null,
   apiKey: null,
-  modelName: null, // Will be set during initialization
-  
+  modelName: null, // Set to whichever model last succeeded (for the footer)
+
   // Module initialization
   async init(client, bot) {
     console.log("Gemini module initializing...");
-    
+
     // Get API key from environment or config
     this.apiKey = process.env.GEMINI_API_KEY || bot.config.gemini?.apiKey;
-    
+
     if (!this.apiKey) {
       console.warn("⚠️ Gemini API key not found! The gemini command will not work.");
       console.warn("Please set GEMINI_API_KEY in your environment or add it to your config.");
       return;
     }
-    
+
     try {
-      // Import the Google Generative AI package
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
-      
+      // Import the Google GenAI package
+      const { GoogleGenAI } = require('@google/genai');
+
       // Initialize the Gemini API client
-      this.genAI = new GoogleGenerativeAI(this.apiKey);
-      
-      // Try to determine available models
-      try {
-        const models = await this.genAI.getModels();
-        console.log("Available Gemini models:", models.models.map(m => m.name));
-        
-        // Find a suitable model from our candidates
-        for (const candidate of MODEL_CANDIDATES) {
-          if (models.models.some(m => m.name.includes(candidate))) {
-            this.modelName = models.models.find(m => m.name.includes(candidate)).name;
-            console.log(`Selected Gemini model: ${this.modelName}`);
-            break;
-          }
-        }
-        
-        if (!this.modelName) {
-          // If no candidate models are found, use the first available model
-          if (models.models.length > 0) {
-            this.modelName = models.models[0].name;
-            console.log(`No preferred model found. Using ${this.modelName} instead.`);
-          } else {
-            console.warn("No Gemini models available for this API key!");
-          }
-        }
-      } catch (modelError) {
-        console.warn("Could not fetch available models:", modelError);
-        console.log("Will try common model names during execution.");
-        this.modelName = 'gemini-1.5-pro'; // Default to latest
-      }
-      
+      this.ai = new GoogleGenAI({ apiKey: this.apiKey });
+      this.modelName = PRIMARY_MODEL;
+
       console.log("Gemini module initialized successfully!");
     } catch (error) {
       console.error("Failed to initialize Gemini module:", error);
-      console.warn("Make sure '@google/generative-ai' is installed in modules/node_modules");
+      console.warn("Make sure '@google/genai' is installed in modules/node_modules");
     }
   },
   
@@ -118,21 +91,22 @@ module.exports = {
       async execute(interaction, bot) {
         try {
           // Check if the module is properly initialized
-          if (!this.genAI) {
+          if (!this.ai) {
             // Try to initialize now
-            const { GoogleGenerativeAI } = require('@google/generative-ai');
-            
+            const { GoogleGenAI } = require('@google/genai');
+
             // Get API key
             this.apiKey = process.env.GEMINI_API_KEY || bot.config.gemini?.apiKey;
-            
+
             if (!this.apiKey) {
               return interaction.reply({
                 content: "⚠️ Gemini API key not configured. Please ask the bot administrator to set up the Gemini API key.",
                 ephemeral: true
               });
             }
-            
-            this.genAI = new GoogleGenerativeAI(this.apiKey);
+
+            this.ai = new GoogleGenAI({ apiKey: this.apiKey });
+            this.modelName = PRIMARY_MODEL;
           }
           
           // Defer the reply as AI responses might take longer than 3 seconds
@@ -191,18 +165,19 @@ module.exports = {
       async legacyExecute(message, args, bot) {
         try {
           // Check if the module is properly initialized
-          if (!this.genAI) {
+          if (!this.ai) {
             // Try to initialize now
-            const { GoogleGenerativeAI } = require('@google/generative-ai');
-            
+            const { GoogleGenAI } = require('@google/genai');
+
             // Get API key
             this.apiKey = process.env.GEMINI_API_KEY || bot.config.gemini?.apiKey;
-            
+
             if (!this.apiKey) {
               return message.reply("⚠️ Gemini API key not configured. Please ask the bot administrator to set up the Gemini API key.");
             }
-            
-            this.genAI = new GoogleGenerativeAI(this.apiKey);
+
+            this.ai = new GoogleGenAI({ apiKey: this.apiKey });
+            this.modelName = PRIMARY_MODEL;
           }
           
           // Check for arguments
@@ -269,81 +244,55 @@ module.exports = {
        * @returns {Promise<string>} - Gemini's response
        */
       async generateResponse(prompt, userId) {
-        // Try to determine which model to use if we don't have one yet
-        if (!this.modelName) {
-          // Try each candidate model until one works
-          for (const candidate of MODEL_CANDIDATES) {
-            try {
-              const testModel = this.genAI.getGenerativeModel({ model: candidate });
-              await testModel.generateContent("test");
-              this.modelName = candidate;
-              console.log(`Found working model: ${candidate}`);
-              break;
-            } catch (e) {
-              console.log(`Model ${candidate} not available, trying next...`);
-            }
-          }
-          
-          if (!this.modelName) {
-            throw new Error("No compatible Gemini models available for your API key.");
-          }
-        }
-        
-        // Get the model
-        const model = this.genAI.getGenerativeModel({ model: this.modelName });
-        
         // Get user's conversation history or create new
         if (!userConversations.has(userId)) {
           userConversations.set(userId, {
             history: []
           });
         }
-        
+
         const userConvo = userConversations.get(userId);
-        
-        let response;
-        
-        // Try chat mode first (for conversation history)
-        try {
-          // Use chat for maintaining conversation history
-          const chat = model.startChat({
+
+        // Run a chat turn against a given model. History shape is unchanged:
+        // [{ role: 'user'|'model', parts: [{ text }] }].
+        const runChat = async (model) => {
+          const chat = this.ai.chats.create({
+            model,
             history: userConvo.history,
-            generationConfig: {
+            config: {
               maxOutputTokens: 1000,
               temperature: 0.7,
               topP: 0.85,
               topK: 40
             }
           });
-          
-          // Send the message and get response
-          const result = await chat.sendMessage(prompt);
-          response = result.response.text();
-          
-          // Update conversation history
-          userConvo.history.push({ role: "user", parts: [{ text: prompt }] });
-          userConvo.history.push({ role: "model", parts: [{ text: response }] });
-          
-          // Limit history length
-          if (userConvo.history.length > MAX_HISTORY_LENGTH * 2) {
-            // Remove oldest message pair (user message and model response)
-            userConvo.history.splice(0, 2);
-          }
-        } catch (chatError) {
-          console.warn("Chat mode failed, falling back to single-turn generation:", chatError);
-          
-          // Fall back to single turn generation
-          try {
-            const result = await model.generateContent(prompt);
-            response = result.response.text();
-            
-            // Clear history since we can't use it
-            userConvo.history = [];
-          } catch (genError) {
-            throw genError; // Re-throw if both methods fail
-          }
+
+          const result = await chat.sendMessage({ message: prompt });
+          return result.text;
+        };
+
+        let response;
+        try {
+          // Primary model first.
+          response = await runChat(PRIMARY_MODEL);
+          this.modelName = PRIMARY_MODEL;
+        } catch (primaryError) {
+          console.warn(`[gemini] Primary model ${PRIMARY_MODEL} failed, retrying with ${FALLBACK_MODEL}:`, primaryError.message);
+          // Retry once with the fallback model before giving up.
+          response = await runChat(FALLBACK_MODEL);
+          this.modelName = FALLBACK_MODEL;
         }
-        
+
+        // Update conversation history
+        userConvo.history.push({ role: "user", parts: [{ text: prompt }] });
+        userConvo.history.push({ role: "model", parts: [{ text: response }] });
+
+        // Limit history length
+        if (userConvo.history.length > MAX_HISTORY_LENGTH * 2) {
+          // Remove oldest message pair (user message and model response)
+          userConvo.history.splice(0, 2);
+        }
+
         return response;
       }
     },
