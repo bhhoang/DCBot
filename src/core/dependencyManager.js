@@ -187,14 +187,28 @@ class DependencyManager {
           return resolve();
         }
         
-        // Run npm install in the module directory
+        // Run npm install in the module directory.
+        // --ignore-scripts blocks lifecycle-script RCE (supply-chain hardening).
         console.log(`Installing dependencies for module: ${path.basename(modulePath)}`);
-        
-        execSync('npm install --no-audit --quiet', { 
+
+        execSync('npm install --ignore-scripts --no-audit --quiet', {
           cwd: modulePath,
           stdio: ['ignore', 'pipe', 'pipe']
         });
-        
+
+        // Native deps need their build scripts to compile; rebuild only known-safe ones.
+        // MAINTENANCE: add any future native module dep names here.
+        const NATIVE_REBUILD_ALLOWLIST = ['sqlite3', 'opusscript', '@discordjs/opus', 'sodium-native', 'libsodium-wrappers'];
+        const installedDeps = Object.keys(packageJson.dependencies || {});
+        const toRebuild = NATIVE_REBUILD_ALLOWLIST.filter(dep => installedDeps.includes(dep));
+        if (toRebuild.length > 0) {
+          console.log(`Rebuilding native deps: ${toRebuild.join(', ')}`);
+          execSync(`npm rebuild ${toRebuild.join(' ')}`, {
+            cwd: modulePath,
+            stdio: ['ignore', 'pipe', 'pipe']
+          });
+        }
+
         console.log(`Dependencies installed successfully for module: ${path.basename(modulePath)}`);
         resolve();
       } catch (error) {
