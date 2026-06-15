@@ -8,6 +8,10 @@ const commandHandlers = require('./handlers/commandHandlers');
 // Map to store active games by channel ID
 const activeGames = new Map();
 
+let cleanupInterval = null;
+let interactionHandler = null;
+let client_ref = null;
+
 module.exports = {
   meta: {
     name: "werewolf",
@@ -22,8 +26,10 @@ module.exports = {
   async init(client, bot) {
     console.log("Module Ma Sói đã khởi tạo!");
 
+    client_ref = client;
+
     // Set up auto-cleanup interval for ended games
-    setInterval(() => {
+    cleanupInterval = setInterval(() => {
       // Check for any games that have ended but not been removed from the map
       for (const [channelId, game] of activeGames.entries()) {
         if (game.state === 'ENDED') {
@@ -41,7 +47,7 @@ module.exports = {
     }, 30000); // Check every half minute
 
     // Set up button and select menu interaction handlers
-    client.on('interactionCreate', async (interaction) => {
+    interactionHandler = async (interaction) => {
       try {
         // Handle button interactions
         if (interaction.isButton()) {
@@ -80,7 +86,8 @@ module.exports = {
           }
         }
       }
-    });
+    };
+    client.on('interactionCreate', interactionHandler);
   },
 
   // Module shutdown
@@ -88,6 +95,16 @@ module.exports = {
   // Update the shutdown method completely:
   async shutdown() {
     console.log("Module Ma Sói đang tắt!");
+
+    // Clear the leaked cleanup interval and interaction listener.
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
+      cleanupInterval = null;
+    }
+    if (interactionHandler && client_ref) {
+      client_ref.removeListener('interactionCreate', interactionHandler);
+      interactionHandler = null;
+    }
 
     // Import TTS utils for disconnection
     try {
@@ -107,12 +124,6 @@ module.exports = {
       //   .setTitle("🧹 Trò Chơi Kết Thúc")
       //   .setDescription("Trò chơi đã kết thúc. Vui lòng chờ để chúng tôi dọn dẹp.")
       //   .setColor("#2f3136");
-
-      try {
-        await game.channel.send({ embeds: [cleanupEmbed] });
-      } catch (error) {
-        console.error(`Error sending cleanup message to channel ${channelId}:`, error);
-      }
 
       // Clean up game timers and resources
       if (typeof game.cleanup === 'function') {
