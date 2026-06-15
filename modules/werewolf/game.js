@@ -1992,7 +1992,7 @@ async processAIDiscussions() {
     // Clear all active timers
     if (this.activeTimers) {
       Object.values(this.activeTimers).forEach(timer => {
-        clearInterval(timer);
+        clearInterval(timer.interval);
       });
       this.activeTimers = {};
     }
