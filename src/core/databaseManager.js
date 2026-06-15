@@ -179,7 +179,20 @@ class DatabaseManager {
       // First get existing settings outside the Promise
       const existingSettings = await this.getGuildSettings(guildId);
       const mergedSettings = { ...existingSettings, ...settings, updated_at: now };
-      
+
+      // Column names are interpolated into SQL below; values are parameterized.
+      // Allowlist keys against the known schema to prevent SQL injection if a
+      // caller ever forwards user-controlled object keys.
+      const ALLOWED_COLUMNS = new Set([
+        'guild_id', 'prefix', 'welcome_channel', 'farewell_channel',
+        'log_channel', 'auto_role', 'created_at', 'updated_at'
+      ]);
+      for (const key of Object.keys(mergedSettings)) {
+        if (!ALLOWED_COLUMNS.has(key)) {
+          throw new Error(`Invalid guild_settings column: ${key}`);
+        }
+      }
+
       return new Promise((resolve, reject) => {
         if (existingSettings.guild_id) {
           // Update existing settings
