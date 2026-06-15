@@ -110,7 +110,7 @@ class ModuleLoader {
       moduleDir = path.join(this.modulesPath, item.name);
     }
 
-    const moduleRequire = this.createModuleRequire(moduleDir);
+    const moduleRequire = this.createModuleRequire(moduleDir, item, meta.name);
 
     // Load the module
     let module;
@@ -196,34 +196,41 @@ class ModuleLoader {
   }
 
   /**
-   * Create a custom require function for a module
+   * Create a custom require function for a module.
+   * Resolution order: relative paths -> the module's store view -> root node_modules
+   * -> last-ditch direct require. The legacy shared modules/node_modules path is gone.
    * @param {string} moduleDir - Path to the module directory
+   * @param {object} item - { name, type } describing the module
+   * @param {string} metaName - The module's meta.name (keys the single-file view dir)
    * @returns {Function} - Custom require function
    */
-  createModuleRequire(moduleDir) {
-    // Create a custom require function that looks in the module's node_modules first
+  createModuleRequire(moduleDir, item, metaName) {
+    // For single-file modules the view lives at modules/.views/<name>/node_modules;
+    // for directory modules it lives at <moduleDir>/node_modules.
+    // The single-file view dir is keyed by the module's meta.name (with filename
+    // fallback) to match how the Store builds it in _buildView — deriving it from
+    // the filename alone would break resolution when meta.name !== filename.
+    const viewModules = item && item.type === 'file'
+      ? path.join(this.modulesPath, '.views', metaName || path.basename(item.name, '.js'), 'node_modules')
+      : path.join(moduleDir, 'node_modules');
+
     return (id) => {
       if (id.startsWith('./') || id.startsWith('../')) {
-        // Relative path - load from the module directory
         return require(path.join(moduleDir, id));
       }
 
       try {
-        // First try to load from the module's node_modules (if it's a directory)
-        if (fs.existsSync(path.join(moduleDir, 'node_modules'))) {
-          return require(require.resolve(id, { paths: [path.join(moduleDir, 'node_modules')] }));
+        if (fs.existsSync(viewModules)) {
+          return require(require.resolve(id, { paths: [viewModules] }));
         }
+      } catch {
+        // fall through to root resolution
+      }
 
-        // Then try to load from the shared modules node_modules
-        if (fs.existsSync(path.join(this.modulesPath, 'node_modules'))) {
-          return require(require.resolve(id, { paths: [path.join(this.modulesPath, 'node_modules')] }));
-        }
-
-        // If not found, try to load from the main project's node_modules
-        return require(id);
+      try {
+        return require(id); // root node_modules (discord.js and other host deps)
       } catch (error) {
-        // If all else fails, try a direct require
-        console.warn(`[MODULE-REQUIRE] Falling back to direct require for "${id}" (resolution failed: ${error.message})`);
+        console.warn(`[MODULE-REQUIRE] Falling back to direct require for "${id}" (${error.message})`);
         return require(id);
       }
     };

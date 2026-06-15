@@ -44,10 +44,19 @@ async function reloadModules(moduleName, bot) {
       // Register commands and events ONCE after all modules are loaded
       await bot.commandHandler.registerCommands();
       await bot.eventHandler.registerEvents();
-      
+
+      // Install deps for any newly-present module, then reclaim orphans from
+      // removed/disabled modules. Guarded: a dep failure must not abort reload.
+      try {
+        await bot.dependencyManager.checkDependencies();
+        await bot.dependencyManager.gcStore();
+      } catch (depError) {
+        console.error('Dependency sync during reload failed (non-fatal):', depError.message);
+      }
+
       return results;
     }
-    
+
     // Handle multiple modules separated by commas or spaces
     const moduleNames = moduleName.split(/[\s,]+/).filter(Boolean);
     
