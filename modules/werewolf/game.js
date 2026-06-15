@@ -1910,7 +1910,7 @@ async processAIDiscussions() {
       const player = this.players[playerId];
       if (!player.isAlive) continue;
 
-      if (player.role === "WEREWOLF") {
+      if (player.role === "WEREWOLF" || player.role === "CURSED_WEREWOLF") {
         aliveWerewolves++;
       } else {
         aliveVillagers++;
