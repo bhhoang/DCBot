@@ -1645,6 +1645,19 @@ async processAIDiscussions() {
  * @param {string} targetId - ID of voted player, or 'skip'
  * @returns {Object} Result of the vote
  */
+  /**
+   * If every alive player has voted, end voting immediately.
+   * Called after registering both skip and target votes.
+   */
+  checkAllVoted() {
+    const alivePlayers = this.getAlivePlayers();
+    const votedPlayers = alivePlayers.filter(p => p.hasVoted);
+    if (votedPlayers.length === alivePlayers.length) {
+      // Defer to avoid races with concurrent vote processing.
+      setTimeout(() => this.endVoting(), 1000);
+    }
+  }
+
   handleVote(voterId, targetId) {
     // Track voting transactions to prevent spam
     if (!this.votingInProgress) {
@@ -1706,6 +1719,7 @@ async processAIDiscussions() {
         voter.hasVoted = true;
         this.votes[voterId] = 'skip';
         this.votingInProgress.delete(voterId); // Clear voting lock
+        this.checkAllVoted();
         return { success: true, message: "Bạn đã quyết định không bỏ phiếu." };
       } else {
         // Check if target exists and is alive
@@ -1723,15 +1737,8 @@ async processAIDiscussions() {
         // Clear the voting lock for this player
         this.votingInProgress.delete(voterId);
 
-        // Check if all players have voted
-        const alivePlayers = this.getAlivePlayers();
-        const votedPlayers = alivePlayers.filter(p => p.hasVoted);
-
-        if (votedPlayers.length === alivePlayers.length) {
-          // All players have voted, end voting immediately
-          // Use setTimeout to avoid race conditions with concurrent vote processing
-          setTimeout(() => this.endVoting(), 1000);
-        }
+        // Check if all players have voted (shared with the skip branch)
+        this.checkAllVoted();
 
         return { success: true, message: `Bạn đã bỏ phiếu cho ${target.name}.` };
       }
