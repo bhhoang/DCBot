@@ -223,6 +223,7 @@ class ModuleLoader {
         return require(id);
       } catch (error) {
         // If all else fails, try a direct require
+        console.warn(`[MODULE-REQUIRE] Falling back to direct require for "${id}" (resolution failed: ${error.message})`);
         return require(id);
       }
     };

@@ -212,8 +212,8 @@ class DependencyManager {
         console.log(`Dependencies installed successfully for module: ${path.basename(modulePath)}`);
         resolve();
       } catch (error) {
-        console.error(`Failed to install dependencies for module ${path.basename(modulePath)}:`, error);
-        // Continue even if there's an error, to not block other modules
+        // Don't block other modules, but make a missing-deps situation loud.
+        console.error(`[DEP-INSTALL-FAILED] Module ${path.basename(modulePath)} may run with missing deps:`, error.message);
         resolve();
       }
     });
