@@ -106,6 +106,40 @@ class Store {
       .filter((d) => d.isDirectory() && d.name !== '.staging')
       .map((d) => layout.decodeEntryDirName(d.name));
   }
+
+  // Run a hardened npm install for one module in an isolated staging dir.
+  // Returns { closure: string[], skipped: boolean }. skipped=true means the
+  // declared-deps hash matched the recorded closure (fast path, no npm call).
+  _stageInstall(module, recordedHash) {
+    const deps = module.deps || {};
+    const declaredHash = closuresLib.hashDeclaredDeps(deps);
+
+    if (Object.keys(deps).length === 0) {
+      return { closure: [], skipped: true, hash: declaredHash };
+    }
+    if (recordedHash && recordedHash === declaredHash) {
+      return { closure: null, skipped: true, hash: declaredHash };
+    }
+
+    const stageDir = layout.stagingPath(this.modulesPath, module.name);
+    safeRemove(stageDir);
+    fs.mkdirSync(stageDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(stageDir, 'package.json'),
+      JSON.stringify({ name: `stage-${module.name}`, version: '1.0.0', dependencies: deps }, null, 2)
+    );
+
+    // --ignore-scripts blocks lifecycle-script RCE (supply-chain hardening).
+    execSync('npm install --ignore-scripts --no-audit --no-fund --quiet', {
+      cwd: stageDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const lockPath = path.join(stageDir, 'package-lock.json');
+    const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    const closure = closuresLib.parseClosureFromLock(lock);
+    return { closure, skipped: false, hash: declaredHash, stageDir };
+  }
 }
 
 module.exports = { Store, NATIVE_REBUILD_ALLOWLIST };
