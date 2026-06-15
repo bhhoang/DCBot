@@ -629,6 +629,7 @@ class WerewolfGame {
       clearTimeout(this._nightTimeout);
       this._nightTimeout = null;
     }
+    this._advanceScheduled = false;
     console.log(`Current phase: ${this.nightPhase}`);
     const phases = Object.values(NIGHT_PHASE);
 
@@ -944,7 +945,10 @@ class WerewolfGame {
             }
 
             // Use a small delay to prevent race conditions when multiple actions are submitted simultaneously
-            setTimeout(() => this.advanceNightPhase(), 1000);
+            if (!this._advanceScheduled) {
+              this._advanceScheduled = true;
+              setTimeout(() => this.advanceNightPhase(), 1000);
+            }
           }
         }
         // For witch, check if the action is complete (not just selecting kill target)
@@ -956,7 +960,10 @@ class WerewolfGame {
 
           if (allWitchesActed) {
             console.log("Witch action complete, advancing to next phase");
-            setTimeout(() => this.advanceNightPhase(), 1000);
+            if (!this._advanceScheduled) {
+              this._advanceScheduled = true;
+              setTimeout(() => this.advanceNightPhase(), 1000);
+            }
           }
         }
         // For other roles, simply check if all have acted
@@ -967,7 +974,10 @@ class WerewolfGame {
 
           if (allPlayersActed) {
             console.log(`All ${this.nightPhase} players have acted, advancing to next phase`);
-            setTimeout(() => this.advanceNightPhase(), 1000);
+            if (!this._advanceScheduled) {
+              this._advanceScheduled = true;
+              setTimeout(() => this.advanceNightPhase(), 1000);
+            }
           }
         }
       } else {
