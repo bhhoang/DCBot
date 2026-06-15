@@ -624,6 +624,11 @@ class WerewolfGame {
  * Advance to the next night phase
  */
   async advanceNightPhase() {
+    // A natural advance cancels the stale auto-advance timeout.
+    if (this._nightTimeout) {
+      clearTimeout(this._nightTimeout);
+      this._nightTimeout = null;
+    }
     console.log(`Current phase: ${this.nightPhase}`);
     const phases = Object.values(NIGHT_PHASE);
 
@@ -787,9 +792,11 @@ class WerewolfGame {
 
     // Auto-advance night phase after timeout (only needed for human players)
     if (humanPlayers.length > 0) {
-      setTimeout(() => {
-        // Check if we're still in the same phase
-        if (this.state === STATE.NIGHT && this.nightPhase) {
+      const timeoutDay = this.day;
+      const timeoutPhase = this.nightPhase;
+      this._nightTimeout = setTimeout(() => {
+        // Only act if still in the SAME phase of the SAME night.
+        if (this.state === STATE.NIGHT && this.nightPhase === timeoutPhase && this.day === timeoutDay) {
           console.log(`Timeout for ${this.nightPhase} phase reached`);
 
           // Check if all human players have acted
