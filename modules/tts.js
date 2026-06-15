@@ -2,8 +2,7 @@
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
-const { createAudioPlayer, createAudioResource, joinVoiceChannel, AudioPlayerStatus, 
+const { createAudioPlayer, createAudioResource, joinVoiceChannel, AudioPlayerStatus,
         VoiceConnectionStatus, entersState, NoSubscriberBehavior } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
 const { exec } = require('child_process');
@@ -34,7 +33,6 @@ module.exports = {
     npmDependencies: {
       'google-tts-api': '^2.0.2',
       '@discordjs/voice': '^0.16.1',
-      'axios': '^0.21.1',
       'libsodium-wrappers': '^0.7.11',  // Add encryption package for voice
       'ffmpeg-static': '^5.2.0',  // Add static FFmpeg executable
       'prism-media': '^1.3.5'     // Add Prism for opus processing
@@ -293,13 +291,13 @@ module.exports = {
                 host: 'https://translate.google.com'
               });
               
-              const response = await axios({
-                method: 'get',
-                url: audioUrl,
-                responseType: 'arraybuffer'
-              });
-              
-              audioChunks.push(response.data);
+              const response = await fetch(audioUrl);
+              if (!response.ok) {
+                throw new Error(`TTS fetch failed: ${response.status}`);
+              }
+              const arrayBuffer = await response.arrayBuffer();
+
+              audioChunks.push(Buffer.from(arrayBuffer));
               console.log(`Successfully generated audio for chunk ${index + 1}`);
             } catch (error) {
               console.error(`Error generating audio for chunk ${index + 1}:`, error);
