@@ -1384,10 +1384,11 @@ async processAIDiscussions() {
   async startCountdown(seconds, phase, callback) {
     // Clear any existing countdown timers first
     if (this.activeTimers) {
-      Object.values(this.activeTimers).forEach(timerData => {
+      Object.entries(this.activeTimers).forEach(([key, timerData]) => {
         if (timerData.interval) {
           clearInterval(timerData.interval);
         }
+        delete this.activeTimers[key];
       });
     }
 
