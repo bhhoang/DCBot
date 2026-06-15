@@ -140,6 +140,103 @@ class Store {
     const closure = closuresLib.parseClosureFromLock(lock);
     return { closure, skipped: false, hash: declaredHash, stageDir };
   }
+
+  // Move each "name@version" in the closure from the staging tree into the store,
+  // unless that entry already exists (dedup). Then wire intra-store junctions and
+  // rebuild any native entries that were newly promoted.
+  _promoteClosure(closure, stageDir) {
+    const stageModules = path.join(stageDir, 'node_modules');
+    const newlyPromoted = [];
+
+    for (const entry of closure) {
+      const dest = layout.storeEntryPackagePath(this.modulesPath, entry);
+      if (fs.existsSync(dest)) continue; // already in store — dedup
+
+      const { name } = layout.splitEntry(entry);
+      const src = path.join(stageModules, ...name.split('/'));
+      if (!fs.existsSync(src)) {
+        // npm may dedupe a transitive higher in the tree; locate it by walking.
+        const found = this._findInStageTree(stageModules, name);
+        if (!found) {
+          console.error(`[DEP-STORE] resolved package not found in staging: ${entry}`);
+          continue;
+        }
+        this._movePackage(found, dest);
+      } else {
+        this._movePackage(src, dest);
+      }
+      newlyPromoted.push(entry);
+    }
+
+    this._wireIntraStoreJunctions(closure);
+    this._rebuildNative(newlyPromoted);
+  }
+
+  _movePackage(src, dest) {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.renameSync(src, dest); // same volume (modules/.store) — atomic move
+  }
+
+  // Find a package dir by name anywhere in a staging node_modules tree (handles
+  // nested node_modules from npm's occasional non-hoisted placement).
+  _findInStageTree(stageModules, name) {
+    const direct = path.join(stageModules, ...name.split('/'));
+    if (fs.existsSync(direct)) return direct;
+    const stack = [stageModules];
+    while (stack.length) {
+      const dir = stack.pop();
+      if (!fs.existsSync(dir)) continue;
+      for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue;
+        const nested = path.join(dir, d.name, 'node_modules');
+        const candidate = path.join(nested, ...name.split('/'));
+        if (fs.existsSync(candidate)) return candidate;
+        if (fs.existsSync(nested)) stack.push(nested);
+      }
+    }
+    return null;
+  }
+
+  // For each store entry, create junctions to its direct deps inside the entry's
+  // own node_modules, so nested require() resolves pnpm-style without hoisting.
+  _wireIntraStoreJunctions(closure) {
+    const byName = new Map(); // name -> "name@version" present in this closure
+    for (const entry of closure) byName.set(layout.splitEntry(entry).name, entry);
+
+    for (const entry of closure) {
+      const pkgPath = layout.storeEntryPackagePath(this.modulesPath, entry);
+      const pkgJsonPath = path.join(pkgPath, 'package.json');
+      if (!fs.existsSync(pkgJsonPath)) continue;
+
+      let directDeps = {};
+      try {
+        directDeps = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8')).dependencies || {};
+      } catch { continue; }
+
+      const entryModules = layout.storeEntryModulesPath(this.modulesPath, entry);
+      for (const depName of Object.keys(directDeps)) {
+        const depEntry = byName.get(depName);
+        if (!depEntry) continue; // satisfied at root or by self — skip
+        const linkPath = path.join(entryModules, ...depName.split('/'));
+        const target = layout.storeEntryPackagePath(this.modulesPath, depEntry);
+        ensureJunction(linkPath, target);
+      }
+    }
+  }
+
+  _rebuildNative(entries) {
+    for (const entry of entries) {
+      const { name } = layout.splitEntry(entry);
+      if (!NATIVE_REBUILD_ALLOWLIST.includes(name)) continue;
+      const pkgPath = layout.storeEntryPackagePath(this.modulesPath, entry);
+      try {
+        console.log(`[DEP-STORE] rebuilding native dep ${entry}`);
+        execSync('npm rebuild', { cwd: pkgPath, stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (error) {
+        console.error(`[DEP-STORE] native rebuild failed for ${entry}: ${error.message}`);
+      }
+    }
+  }
 }
 
 module.exports = { Store, NATIVE_REBUILD_ALLOWLIST };
