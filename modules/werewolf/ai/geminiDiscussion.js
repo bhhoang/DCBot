@@ -7,15 +7,22 @@
  * Uses the official @google/generative-ai library.
  */
 
-// Import the Google Generative AI library instead of axios
+// Import the Google Generative AI library
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { getRole } = require('../roles');
 
-// Replace with your actual Gemini API key
-const GEMINI_API_KEY = 'AIzaSyC_8K-M-K8coP37yyRnyjZ3YzIbiOCSVKc';
+// Lazy-initialized Gemini client (keyed off env or bot config).
+let genAI = null;
 
-// Initialize the Generative AI API
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+function getGenAI() {
+  if (genAI) return genAI;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY not configured (set env var or config.gemini.apiKey)');
+  }
+  genAI = new GoogleGenerativeAI(apiKey);
+  return genAI;
+}
 
 // Store previously used messages to track conversation threads
 const messageHistory = [];
@@ -64,7 +71,7 @@ KHÔNG bao gồm dialogue markers như ":", "-", hay tên người chơi.
     }
 
     // Generate content using the Gemini model
-    const model = genAI.getGenerativeModel({
+    const model = getGenAI().getGenerativeModel({
       model: "gemini-2.0-flash-lite" // Using the flash model for faster responses
     });
 
@@ -353,7 +360,7 @@ KHÔNG bao gồm dialogue markers như ":", "-", hay tên người chơi.
     }
 
     // Generate content using the Gemini model
-    const model = genAI.getGenerativeModel({
+    const model = getGenAI().getGenerativeModel({
       model: "gemini-2.0-flash-lite"
     });
 
