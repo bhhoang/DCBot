@@ -335,8 +335,11 @@ module.exports = {
     if (bot.eventHandler && !bot.eventHandler.unregisterAllEvents) {
       bot.eventHandler.unregisterAllEvents = async function() {
         console.log("Unregistering all events before reload");
-        // Implementation depends on your event handler structure
-        // This is a placeholder - you need to implement based on your system
+        // Remove every module's listeners via the real per-module unregister,
+        // so a full reload doesn't leave stale client.on() bindings behind.
+        for (const moduleName of Array.from(this.moduleEvents.keys())) {
+          this.unregisterModuleEvents(moduleName);
+        }
         return true;
       };
     }
