@@ -283,6 +283,60 @@ class Store {
     closures[module.name] = { deps: result.hash, closure };
     return closures;
   }
+
+  // Install deps for every present, enabled, non-isolated module. Persists
+  // closures.json. Per-module failures are logged loudly but never abort others.
+  installAll() {
+    const modules = this.discoverModules().filter((m) => this.isEnabled(m.name) && !m.isolated);
+    let closures = this.readClosures();
+
+    for (const module of modules) {
+      try {
+        closures = this.syncModule(module, closures);
+      } catch (error) {
+        console.error(`[DEP-STORE-FAILED] ${module.name}: ${error.message}`);
+      }
+    }
+    this.writeClosures(closures);
+  }
+
+  // Recompute the live set from closures.json over present+enabled+non-isolated
+  // modules, prune stale closure keys, delete orphan store entries, and remove
+  // views for modules that are gone. Never throws.
+  gc() {
+    try {
+      const present = this.discoverModules();
+      const liveNames = present
+        .filter((m) => this.isEnabled(m.name) && !m.isolated)
+        .map((m) => m.name);
+
+      let closures = closuresLib.pruneClosures(this.readClosures(), liveNames);
+      const liveSet = closuresLib.computeLiveSet(closures, liveNames);
+
+      const orphans = closuresLib.findOrphans(this.listStoreEntries(), liveSet);
+      for (const entry of orphans) {
+        const entryDir = path.join(layout.storeRoot(this.modulesPath), layout.entryDirName(entry));
+        if (safeRemove(entryDir)) console.log(`[DEP-STORE] reclaimed ${entry}`);
+      }
+
+      // Remove views for single-file modules no longer present/enabled/in-store.
+      const viewsRoot = path.join(this.modulesPath, '.views');
+      if (fs.existsSync(viewsRoot)) {
+        const liveViewNames = new Set(liveNames);
+        for (const d of fs.readdirSync(viewsRoot, { withFileTypes: true })) {
+          if (d.isDirectory() && !liveViewNames.has(d.name)) {
+            if (safeRemove(path.join(viewsRoot, d.name))) {
+              console.log(`[DEP-STORE] reclaimed view ${d.name}`);
+            }
+          }
+        }
+      }
+
+      this.writeClosures(closures);
+    } catch (error) {
+      console.error(`[DEP-STORE] gc sweep error (non-fatal): ${error.message}`);
+    }
+  }
 }
 
 module.exports = { Store, NATIVE_REBUILD_ALLOWLIST };
