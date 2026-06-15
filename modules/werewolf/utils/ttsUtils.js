@@ -7,6 +7,43 @@ const { Readable } = require('stream');
 const activeConnections = new Map();
 
 /**
+ * Get-or-create a voice connection for a channel. Single source of truth for
+ * the activeConnections map. Returns the stored { connection, player, channelId }.
+ * @param {Object} channel - Discord voice channel
+ * @returns {Object} The connection entry
+ */
+function joinVoice(channel) {
+  if (!channel) throw new Error('joinVoice: no channel provided');
+
+  let entry = activeConnections.get(channel.guild.id);
+
+  if (!entry) {
+    const connection = joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+    });
+    const player = createAudioPlayer();
+    connection.subscribe(player);
+    entry = { connection, player, channelId: channel.id };
+    activeConnections.set(channel.guild.id, entry);
+  } else if (entry.channelId !== channel.id) {
+    entry.connection.destroy();
+    const connection = joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+    });
+    const player = createAudioPlayer();
+    connection.subscribe(player);
+    entry = { connection, player, channelId: channel.id };
+    activeConnections.set(channel.guild.id, entry);
+  }
+
+  return entry;
+}
+
+/**
  * Convert text to speech using Google TTS API and play it in a voice channel
  * @param {Object} channel - Voice channel to join
  * @param {string} text - Text to speak
@@ -26,51 +63,9 @@ async function speak(channel, text, language = 'vi') {
       return;
     }
 
-    // Get or create connection
-    let connection = activeConnections.get(channel.guild.id);
-    let player;
-
-    if (!connection) {
-      // Create new connection
-      connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: channel.guild.id,
-        adapterCreator: channel.guild.voiceAdapterCreator,
-      });
-
-      // Create audio player
-      player = createAudioPlayer();
-      connection.subscribe(player);
-
-      // Store connection and player
-      activeConnections.set(channel.guild.id, {
-        connection,
-        player,
-        channelId: channel.id
-      });
-    } else {
-      // Get existing player
-      player = connection.player;
-
-      // If the channel changed, update the connection
-      if (connection.channelId !== channel.id) {
-        connection.connection.destroy();
-        connection = joinVoiceChannel({
-          channelId: channel.id,
-          guildId: channel.guild.id,
-          adapterCreator: channel.guild.voiceAdapterCreator,
-        });
-
-        player = createAudioPlayer();
-        connection.subscribe(player);
-
-        activeConnections.set(channel.guild.id, {
-          connection,
-          player,
-          channelId: channel.id
-        });
-      }
-    }
+    // Get or create connection (single source of truth in joinVoice)
+    const entry = joinVoice(channel);
+    const player = entry.player;
 
     // Get audio URL from Google TTS API
     // We need to break text into chunks of 200 characters due to API limitations
@@ -336,6 +331,7 @@ function getRole(roleId) {
 
 module.exports = {
   speak,
+  joinVoice,
   disconnect,
   disconnectAll,
   formatTextForTTS,

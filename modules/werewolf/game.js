@@ -391,12 +391,10 @@ class WerewolfGame {
     }
 
     try {
-      const success = await voiceUtils.joinVoice(voiceChannel, this.channel.id);
-      if (success) {
-        this.voiceEnabled = true;
-        this.voiceChannel = voiceChannel;
-        return true;
-      }
+      ttsUtils.joinVoice(voiceChannel);
+      this.voiceEnabled = true;
+      this.voiceChannel = voiceChannel;
+      return true;
     } catch (error) {
       console.error('Error connecting to voice channel:', error);
     }
