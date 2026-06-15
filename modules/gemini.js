@@ -145,15 +145,14 @@ module.exports = {
           
         } catch (error) {
           console.error('Error with Gemini command:', error);
-          const errorMessage = error.message || 'Something went wrong with the Gemini API';
-          
+
           if (interaction.deferred) {
             await interaction.editReply({
-              content: `❌ Error: ${errorMessage}`
+              content: '❌ Something went wrong with the Gemini API.'
             });
           } else {
             await interaction.reply({
-              content: `❌ Error: ${errorMessage}`,
+              content: '❌ Something went wrong with the Gemini API.',
               ephemeral: true
             });
           }
@@ -233,7 +232,7 @@ module.exports = {
           
         } catch (error) {
           console.error('Error with Gemini command:', error);
-          await message.reply(`❌ Error: ${error.message || 'Something went wrong with the Gemini API'}`);
+          await message.reply('❌ Something went wrong with the Gemini API.');
         }
       },
       

@@ -97,7 +97,7 @@ module.exports = {
           } catch (error) {
             console.error("Error deleting messages:", error);
             await interaction.editReply({
-              content: `Error deleting messages: ${error.message}`,
+              content: "Error deleting messages. Please try again later.",
               ephemeral: true
             });
           }
@@ -178,7 +178,7 @@ module.exports = {
             } else {
               console.error("Error with confirmation:", error);
               await interaction.editReply({
-                content: `Error: ${error.message}`,
+                content: "Something went wrong. Please try again later.",
                 embeds: [],
                 components: []
               });
@@ -234,12 +234,12 @@ module.exports = {
           console.error("Error clearing channel:", error);
           if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
-              content: `Error clearing channel: ${error.message}`,
+              content: "Something went wrong while clearing the channel.",
               ephemeral: true
             });
           } else {
             await interaction.reply({
-              content: `Error clearing channel: ${error.message}`,
+              content: "Something went wrong while clearing the channel.",
               ephemeral: true
             });
           }
@@ -342,7 +342,7 @@ module.exports = {
             
           } catch (error) {
             console.error("Error deleting messages:", error);
-            message.reply(`Error deleting messages: ${error.message}`);
+            message.reply("Something went wrong while deleting messages.");
           }
           
           return;

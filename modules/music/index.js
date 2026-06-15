@@ -226,11 +226,11 @@ module.exports = {
             });
           } catch (error) {
             console.error("Audio playback error:", error);
-            return interaction.editReply(`❌ Error playing audio: ${error.message}`);
+            return interaction.editReply(`❌ Error playing audio.`);
           }
         } catch (error) {
           console.error("Play command error:", error);
-          return interaction.editReply(`❌ An error occurred: ${error.message}`);
+          return interaction.editReply(`❌ An error occurred.`);
         }
       },
       
@@ -328,11 +328,11 @@ module.exports = {
             });
           } catch (error) {
             console.error("Audio playback error:", error);
-            return statusMsg.edit(`❌ Error playing audio: ${error.message}`);
+            return statusMsg.edit(`❌ Error playing audio.`);
           }
         } catch (error) {
           console.error("Play command error:", error);
-          return message.reply(`❌ An error occurred: ${error.message}`);
+          return message.reply(`❌ An error occurred.`);
         }
       }
     },
@@ -367,7 +367,7 @@ module.exports = {
           return interaction.reply("⏹️ Stopped playback and left the voice channel.");
         } catch (error) {
           console.error("Stop command error:", error);
-          return interaction.reply(`❌ An error occurred: ${error.message}`);
+          return interaction.reply(`❌ An error occurred.`);
         }
       },
       
@@ -395,7 +395,7 @@ module.exports = {
           return message.reply("⏹️ Stopped playback and left the voice channel.");
         } catch (error) {
           console.error("Stop command error:", error);
-          return message.reply(`❌ An error occurred: ${error.message}`);
+          return message.reply(`❌ An error occurred.`);
         }
       }
     }

@@ -556,7 +556,7 @@ module.exports = {
           }
           
           // Send error message
-          const errorMessage = `Failed to generate TTS: ${error.message}`;
+          const errorMessage = "Failed to generate TTS. Please try again later.";
           if (source.reply) {
             // Slash command
             await source.reply({
@@ -667,7 +667,7 @@ module.exports = {
           console.error("Diagnostic Error:", error);
           
           // Send error message
-          const errorMessage = `Failed to run diagnostics: ${error.message}`;
+          const errorMessage = "Failed to run diagnostics. Please try again later.";
           if (source.reply) {
             await source.reply({
               content: errorMessage,
