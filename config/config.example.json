@@ -44,7 +44,7 @@
     "fileOutput": true,
     "logDirectory": "./logs",
     "logLevel": "info",
-    "logMessageContent": true,
+    "logMessageContent": false,
     "logCommands": true
   },
 
