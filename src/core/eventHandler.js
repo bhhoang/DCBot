@@ -67,10 +67,10 @@ class EventHandler {
    */
   registerEvent(event) {
     // Create the event handler function
-    const handler = (...args) => {
+    const handler = async (...args) => {
       try {
         // Add bot instance to arguments
-        event.execute(...args, this.bot);
+        await event.execute(...args, this.bot);
       } catch (error) {
         console.error(`Error in event ${event.name} from module ${event.module}:`, error);
       }
