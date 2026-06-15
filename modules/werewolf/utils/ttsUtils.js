@@ -1,7 +1,6 @@
 // modules/werewolf/utils/ttsUtils.js
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const googleTTS = require('google-tts-api');
-const axios = require('axios');
 const { Readable } = require('stream');
 
 // Store active connections
@@ -92,15 +91,15 @@ async function speak(channel, text, language = 'vi') {
       });
 
       // Download audio content
-      const response = await axios({
-        method: 'GET',
-        url: url,
-        responseType: 'arraybuffer',
-      });
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`TTS fetch failed: ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
 
       // Create a readable stream from buffer
       const audioStream = new Readable();
-      audioStream.push(Buffer.from(response.data));
+      audioStream.push(Buffer.from(arrayBuffer));
       audioStream.push(null); // End of stream
 
       // Create audio resource and play
