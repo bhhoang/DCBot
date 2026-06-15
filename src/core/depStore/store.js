@@ -237,6 +237,52 @@ class Store {
       }
     }
   }
+
+  // Build a module's view: junction each top-level declared dep into the module's
+  // node_modules. Single-file modules use .views/<name>/node_modules; directory
+  // modules use <dir>/node_modules.
+  _buildView(module, closure) {
+    const viewModules = module.type === 'file'
+      ? layout.viewModulesPath(this.modulesPath, module.name)
+      : path.join(this.modulesPath, module.name, 'node_modules');
+
+    const byName = new Map();
+    for (const entry of closure) byName.set(layout.splitEntry(entry).name, entry);
+
+    for (const depName of Object.keys(module.deps || {})) {
+      const entry = byName.get(depName);
+      if (!entry) {
+        console.error(`[DEP-STORE] ${module.name}: declared dep ${depName} not in resolved closure`);
+        continue;
+      }
+      const linkPath = path.join(viewModules, ...depName.split('/'));
+      const target = layout.storeEntryPackagePath(this.modulesPath, entry);
+      ensureJunction(linkPath, target);
+    }
+  }
+
+  // Full per-module flow. Mutates and returns the closures object. Throws on a
+  // junction failure (caller logs loudly and continues with other modules).
+  syncModule(module, closures) {
+    if (module.isolated) return closures; // opt-out: never enters the store
+
+    const recorded = closures[module.name];
+    const recordedHash = recorded ? recorded.deps : null;
+    const result = this._stageInstall(module, recordedHash);
+
+    if (result.skipped && result.closure === null) {
+      return closures; // fast path: deps unchanged, view already built
+    }
+
+    const closure = result.closure || [];
+    if (!result.skipped) {
+      this._promoteClosure(closure, result.stageDir);
+      safeRemove(result.stageDir);
+    }
+    this._buildView(module, closure);
+    closures[module.name] = { deps: result.hash, closure };
+    return closures;
+  }
 }
 
 module.exports = { Store, NATIVE_REBUILD_ALLOWLIST };
