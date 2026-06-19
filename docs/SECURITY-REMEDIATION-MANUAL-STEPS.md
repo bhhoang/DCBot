@@ -52,3 +52,32 @@ Run after deploying the dep-store change. Requires a bot token and a scratch gui
    - Expect `.store` to shrink (music-only packages reclaimed on the next GC).
 
 6. **Corrupt closures.json self-heals.** Stop the bot, overwrite `modules/.store/closures.json` with `not json`, reboot. Expect `corrupt closures.json, rebuilding` and a clean boot with views rebuilt.
+
+## TTS Module Redesign — manual smoke tests
+
+Run after deploying the TTS redesign. Requires a bot token and a scratch guild with a voice channel.
+
+1. **Boot + dependency install.** Start the bot. Expect `✅ TTS module initialized!`
+   (not the FFmpeg warning). Confirm `modules/tts/` deps installed without
+   `[DEP-STORE-FAILED]` / install errors.
+2. **Basic playback.** Join a voice channel, run `/tts text:"hello world"`. Expect
+   audible speech and the embed "Queued message from ... in Vietnamese" (default).
+   Confirm the temp `.mp3` is deleted after playback (`temp/tts/` empties).
+3. **Language selection.** Run `/tts text:"bonjour" language:French`. Expect French speech
+   and the embed shows "French".
+4. **Long text chunking.** Run `/tts` with >200 chars spanning multiple sentences.
+   Expect the whole message plays as one continuous clip (chunks concatenated).
+5. **Queue serialization.** Fire three `/tts` calls in quick succession. Expect them
+   to play in order, one after another — not overlapping, no `activeConnections` clobber.
+6. **Idle-disconnect.** After the queue drains, expect the bot to leave the channel
+   ~10s later. Then run `/tts` again within the window (before it leaves) and confirm
+   it reuses the live connection (no reconnect delay).
+7. **Listener-leak check.** Run `/tts` ~10 times in the same guild over a few minutes.
+   Expect no growing "MaxListenersExceededWarning" and stable memory — the per-guild
+   connection reuse + listener removal should keep listener counts flat.
+8. **FFmpeg-missing path.** Temporarily rename the ffmpeg-static binary (or test on a
+   box without it), run `/tts`. Expect the install-hint message, not a crash.
+9. **Diagnostic.** Run `/tts-diagnostic`. Expect correct FFmpeg ✅/❌ and voice-channel
+   status reflecting whether you're in a channel.
+10. **Legacy prefix path.** Run the prefix form (e.g. `!tts fr-FR bonjour`). Expect the
+    same behavior as the slash command (confirms the non-deferred `replyOrEdit` branch).
