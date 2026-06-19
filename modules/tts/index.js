@@ -11,6 +11,7 @@ const TTS_TEMP_DIR = path.join(process.cwd(), 'temp', 'tts');
 let ffmpegAvailable = false;
 const queue = new QueueManager();
 const voice = new VoiceManager();
+let fileCounter = 0; // monotonic suffix so two guilds can't collide on the same ms
 
 // Module-scope orchestrator (NOT a method — called directly, not via `this`).
 async function executeTTS(source, text, language) {
@@ -44,13 +45,22 @@ async function executeTTS(source, text, language) {
   queue.onDrain(guildId, () => voice.scheduleIdleDisconnect(guildId));
 
   queue.enqueue(guildId, async () => {
-    const filepath = path.join(TTS_TEMP_DIR, `tts_${Date.now()}.mp3`);
-    const audio = await engine.generate(announcedText, language);
-    fs.writeFileSync(filepath, audio);
+    // Guild-scoped + monotonic suffix: two guilds generating in the same millisecond
+    // must not produce the same path (one would overwrite/delete the other's audio).
+    const filepath = path.join(TTS_TEMP_DIR, `tts_${guildId}_${Date.now()}_${fileCounter++}.mp3`);
     try {
+      const audio = await engine.generate(announcedText, language);
+      fs.writeFileSync(filepath, audio);
       await voice.playFile(voiceChannel, filepath); // resolves when the clip finishes
+    } catch (error) {
+      // The user already got a "Queued" reply, so surface the failure as a follow-up
+      // rather than letting it vanish into the console.
+      console.error('[TTS] request failed:', error.message);
+      if (typeof source.followUp === 'function') {
+        await source.followUp({ content: '⚠️ TTS failed to play your message.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
     } finally {
-      try { fs.unlinkSync(filepath); } catch { /* already gone */ }
+      try { fs.unlinkSync(filepath); } catch { /* never written or already gone */ }
     }
   });
 

@@ -1,12 +1,16 @@
 // modules/tts/voiceManager.js — voice connection + player lifecycle for TTS.
 // Runtime-only (needs a live Discord voice gateway); verified via manual smoke tests.
-const fs = require('fs');
 const {
   createAudioPlayer, createAudioResource, joinVoiceChannel,
   AudioPlayerStatus, VoiceConnectionStatus, entersState, NoSubscriberBehavior,
 } = require('@discordjs/voice');
 
 const isLinux = process.platform === 'linux';
+
+// Hard ceiling on a single clip so a stalled/never-Idle player (e.g. the connection
+// is destroyed mid-play and the player goes AutoPaused instead of Idle) can never
+// wedge the per-guild queue forever. Google TTS clips are short; 5 min is generous.
+const MAX_PLAY_MS = 5 * 60 * 1000;
 
 class VoiceManager {
   constructor() {
@@ -62,7 +66,9 @@ class VoiceManager {
   }
 
   // Resolves when the clip finishes (player reaches Idle) so the queue serializes:
-  // the caller awaits one clip before the next is dequeued.
+  // the caller awaits one clip before the next is dequeued. Bounded by MAX_PLAY_MS so
+  // a never-Idle player (AutoPaused after a mid-play disconnect, or a buffering stall)
+  // cannot hang the guild's queue forever.
   async playFile(voiceChannel, filepath) {
     const connection = await this.connect(voiceChannel);
 
@@ -76,12 +82,20 @@ class VoiceManager {
       : createAudioResource(filepath, { inputType: 'file', inlineVolume: true });
     if (resource.volume) resource.volume.setVolume(1.0);
 
-    // Register completion handlers BEFORE play() so a short clip can't finish first.
-    await new Promise((resolve) => {
-      player.once('error', (e) => { console.error('Audio player error:', e); resolve(); });
-      player.once(AudioPlayerStatus.Idle, () => resolve());
-      player.play(resource);
-    });
+    let timer;
+    try {
+      // Register completion handlers BEFORE play() so a short clip can't finish first.
+      await new Promise((resolve) => {
+        player.once('error', (e) => { console.error('Audio player error:', e); resolve(); });
+        player.once(AudioPlayerStatus.Idle, () => resolve());
+        timer = setTimeout(resolve, MAX_PLAY_MS); // safety net against a wedged player
+        player.play(resource);
+      });
+    } finally {
+      clearTimeout(timer);
+      try { player.stop(true); } catch { /* already stopped */ }
+      try { subscription.unsubscribe(); } catch { /* connection may be gone */ }
+    }
   }
 
   scheduleIdleDisconnect(guildId, ms = 10000) {
