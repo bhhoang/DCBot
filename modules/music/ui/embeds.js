@@ -81,16 +81,12 @@ async function refreshNowPlaying(queue, track, mode) {
   const s = state.get(guildId);
   if (!s || !s.nowPlayingMessage) return;
 
+  // queue.metadata is built in player.js as { channelId, guildId, volume, loopMode }
+  // — no channel field, so always resolve the channel from the saved ref.
   let channel, message;
   try {
-    channel = await queue.metadata?.channel?.fetch?.() || null;
-  } catch { /* fall through */ }
-  if (!channel) {
-    // queue.metadata.channel may be a TextChannel already; if not, try by id.
-    try {
-      channel = await queue.client?.channels?.fetch?.(s.nowPlayingMessage.channelId);
-    } catch { return; }
-  }
+    channel = await queue.client?.channels?.fetch?.(s.nowPlayingMessage.channelId);
+  } catch { return; }
   if (!channel) return;
   try {
     message = await channel.messages.fetch(s.nowPlayingMessage.messageId);

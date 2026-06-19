@@ -1,6 +1,6 @@
 // modules/music/interactions/buttons.js — all button handlers, dispatched
 // from the router by customId.
-const { MessageFlags, PermissionsBitField } = require('discord.js');
+const { MessageFlags } = require('discord.js');
 const { IDS } = require('../ui/components');
 const player = require('../player');
 const state = require('../state');
@@ -9,6 +9,12 @@ const { openVolumeModal } = require('./modals'); // defined in Task 9
 
 const interactionsInProgress = new Map();
 const LOCK_MS = 1000;
+
+// Per-user "Clear All" confirmations. First click sets a timestamp; second click
+// within CLEAR_CONFIRM_MS performs the clear. Mirrors the picker TTL pattern in
+// state.js but lives here because it is purely interaction-local.
+const pendingConfirms = new Map();
+const CLEAR_CONFIRM_MS = 10_000;
 
 function locked(userId) {
   if (interactionsInProgress.has(userId)) return true;
@@ -170,10 +176,23 @@ async function handle(interaction, bot) {
     if (id.startsWith(IDS.QUEUE_CLEAR)) {
       const ownerId = id.slice(IDS.QUEUE_CLEAR.length);
       if (ownerId !== userId) return;
-      const q = player.getQueue(guildId);
-      if (!q) return ephemeral(interaction, 'Queue is already empty.');
-      q.tracks.clear();
-      return ephemeral(interaction, '🗑 Queue cleared.');
+      const now = Date.now();
+      const pending = pendingConfirms.get(userId);
+      if (pending && now - pending < CLEAR_CONFIRM_MS) {
+        // Confirmed within window — actually clear.
+        pendingConfirms.delete(userId);
+        const q = player.getQueue(guildId);
+        if (!q) return ephemeral(interaction, 'Queue is already empty.');
+        q.tracks.clear();
+        return ephemeral(interaction, '🗑 Queue cleared.');
+      }
+      // First click (or window expired) — ask for confirmation.
+      pendingConfirms.set(userId, now);
+      setTimeout(() => {
+        // Best-effort cleanup if the user never confirmed in time.
+        if (pendingConfirms.get(userId) === now) pendingConfirms.delete(userId);
+      }, CLEAR_CONFIRM_MS);
+      return ephemeral(interaction, '⚠️ Are you sure? Click **Clear All** again within 10s to confirm.');
     }
   } catch (error) {
     console.error('[music] button handler error:', error.message);

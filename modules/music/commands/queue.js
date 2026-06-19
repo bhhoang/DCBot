@@ -96,11 +96,23 @@ function nowPlayingCommand() {
       if (!q) return interaction.reply({ content: '❌ Nothing is playing right now.', flags: MessageFlags.Ephemeral });
       const track = q.currentTrack;
       const s = state.getOrCreate(guildId);
-      const sent = await interaction.channel.send({
-        embeds: [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)],
-        components: nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused()),
-      });
+      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)];
+      const components = nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused());
+      const channel = interaction.channel;
+      // Try to edit the existing persistent message first; only post a new one
+      // if there is no ref or the previous message was deleted.
+      if (s.nowPlayingMessage) {
+        try {
+          await channel.messages.edit(s.nowPlayingMessage.messageId, { embeds, components });
+          return interaction.reply({ content: '✅ Now Playing message updated.', flags: MessageFlags.Ephemeral });
+        } catch { /* fall through to create new */ }
+      }
+      const oldMessageId = s.nowPlayingMessage?.messageId;
+      const sent = await channel.send({ embeds, components });
       s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
+      if (oldMessageId && oldMessageId !== sent.id) {
+        channel.messages.delete(oldMessageId).catch(() => {});
+      }
       return interaction.reply({ content: '✅ Now Playing message posted.', flags: MessageFlags.Ephemeral });
     },
     legacy: true,
@@ -110,11 +122,21 @@ function nowPlayingCommand() {
       if (!q) return message.reply('❌ Nothing is playing right now.');
       const track = q.currentTrack;
       const s = state.getOrCreate(guildId);
-      const sent = await message.channel.send({
-        embeds: [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)],
-        components: nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused()),
-      });
+      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)];
+      const components = nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused());
+      const channel = message.channel;
+      if (s.nowPlayingMessage) {
+        try {
+          await channel.messages.edit(s.nowPlayingMessage.messageId, { embeds, components });
+          return message.reply('✅ Now Playing message updated.');
+        } catch { /* fall through to create new */ }
+      }
+      const oldMessageId = s.nowPlayingMessage?.messageId;
+      const sent = await channel.send({ embeds, components });
       s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
+      if (oldMessageId && oldMessageId !== sent.id) {
+        channel.messages.delete(oldMessageId).catch(() => {});
+      }
       return message.reply('✅ Now Playing message posted.');
     },
   };

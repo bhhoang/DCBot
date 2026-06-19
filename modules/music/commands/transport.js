@@ -1,7 +1,6 @@
 // modules/music/commands/transport.js — pause, resume, skip, stop, loop, shuffle.
-const { MessageFlags, PermissionsBitField } = require('discord.js');
+const { MessageFlags } = require('discord.js');
 const player = require('../player');
-const state = require('../state');
 
 function inSameVoice(member, botMember) {
   if (!member?.voice?.channel) return false;

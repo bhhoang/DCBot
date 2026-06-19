@@ -1,7 +1,7 @@
 // modules/music/player.js — thin facade over discord-player. The init() body
 // is the same as the current modules/music/index.js init() but split into
 // helpers so the rest of the module can call into the player.
-const { Player, QueryType, GuildQueueEvent, useMainPlayer } = require('discord-player');
+const { Player, QueryType, GuildQueueEvent } = require('discord-player');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
 const { DefaultExtractors } = require('@discord-player/extractor');
 const { Log } = require('youtubei.js');
@@ -9,13 +9,8 @@ const state = require('./state');
 const { refreshNowPlaying } = require('./ui/embeds'); // created in Task 4
 
 let player = null;
-let client_ref = null;
-let bot_ref = null;
 
 async function init(client, bot) {
-  client_ref = client;
-  bot_ref = bot;
-
   // youtubei.js logs non-fatal parser warnings (missing view types, signature
   // decipher fallbacks) at WARNING level. Clamp to ERROR to keep boot logs clean.
   Log.setLevel(Log.Level.ERROR);
@@ -67,7 +62,10 @@ async function init(client, bot) {
     refreshNowPlaying(queue, queue.currentTrack, 'error').catch(() => {});
   });
 
-  player.events.on(GuildQueueEvent.Disconnect, (queue) => {
+  player.events.on(GuildQueueEvent.Disconnect, async (queue) => {
+    // Render the disconnected embed first (state.clear() would null the
+    // nowPlayingMessage ref that refreshNowPlaying needs to find the message).
+    await refreshNowPlaying(queue, null, 'disconnected');
     state.clear(queue.id);
   });
 
