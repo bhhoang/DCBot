@@ -1,2 +1,2 @@
-// modules/music/interactions/selects.js — select-menu handlers
-module.exports = {};
+// modules/music/interactions/selects.js — TEMPORARY stub, replaced in Task 8.
+module.exports = { handle: async (interaction) => { /* no-op */ } };
