@@ -12,20 +12,21 @@ let listenerRef = null;
 
 function bind(client, bot) {
   if (listenerRef) return; // idempotent
-  listenerRef = async (interaction) => {
-    if (!interaction.customId || !interaction.customId.startsWith(PREFIX)) return;
-    // Volume modal is a modal submit (type 5), not a button/select.
-    if (interaction.isModalSubmit() && interaction.customId === 'music:vol:set:submit') {
-      return modals.handleVolumeSubmit(interaction, bot);
-    }
-    if (interaction.isButton()) {
-      return buttons.handle(interaction, bot);
-    }
-    if (interaction.isStringSelectMenu()) {
-      return selects.handle(interaction, bot);
-    }
-  };
+  listenerRef = (interaction) => handleInteraction(interaction, bot);
   client.on('interactionCreate', listenerRef);
+}
+
+async function handleInteraction(interaction, bot) {
+  if (!interaction.customId || !interaction.customId.startsWith(PREFIX)) return;
+  if (interaction.isModalSubmit() && interaction.customId === 'music:vol:set:submit') {
+    return modals.handleVolumeSubmit(interaction, bot);
+  }
+  if (interaction.isButton()) {
+    return buttons.handle(interaction, bot);
+  }
+  if (interaction.isStringSelectMenu()) {
+    return selects.handle(interaction, bot);
+  }
 }
 
 function unbind() {
@@ -38,4 +39,4 @@ function unbind() {
   listenerRef = null;
 }
 
-module.exports = { bind, unbind, PREFIX };
+module.exports = { bind, unbind, handleInteraction, PREFIX };

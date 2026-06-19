@@ -1,5 +1,9 @@
 // modules/music/index.js — thin orchestrator. Logic lives in sibling files.
+const player = require('./player');
 const router = require('./interactions/router');
+const playCmd = require('./commands/play');
+const transportCmds = require('./commands/transport');
+const queueCmds = require('./commands/queue');
 
 module.exports = {
   meta: {
@@ -12,6 +16,7 @@ module.exports = {
 
   async init(client, bot) {
     console.log('Music module initializing...');
+    await player.init(client, bot);
     router.bind(client, bot);
     console.log('Music module initialized successfully!');
   },
@@ -19,9 +24,17 @@ module.exports = {
   async shutdown() {
     console.log('Music module shutting down...');
     router.unbind();
+    await player.shutdown();
     console.log('Music module shut down successfully!');
   },
 
-  commands: [],  // populated by later tasks
-  events: [],    // populated by later tasks
+  commands: [
+    playCmd.getCommand(),
+    ...transportCmds.getCommands(),
+    ...queueCmds.getCommands(),
+  ],
+
+  events: [
+    { name: 'interactionCreate', execute: router.handleInteraction },
+  ],
 };
