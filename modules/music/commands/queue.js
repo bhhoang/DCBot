@@ -1,2 +1,125 @@
-// modules/music/commands/queue.js — /queue /volume /nowplaying
-module.exports = {};
+// modules/music/commands/queue.js — /queue, /volume, /nowplaying.
+const { MessageFlags } = require('discord.js');
+const player = require('../player');
+const state = require('../state');
+const { sendQueueView } = require('../interactions/selects');
+const { nowPlayingEmbed } = require('../ui/embeds');
+const { nowPlayingRows } = require('../ui/components');
+
+function queueCommand() {
+  return {
+    name: 'queue',
+    description: 'Show the current queue',
+    data: { name: 'queue', description: 'Show the current queue', options: [] },
+    slash: true,
+    cooldown: 0,
+    permissions: ['@everyone'],
+    async execute(interaction) {
+      // Read-only — no voice channel check required.
+      return sendQueueView(interaction, 0);
+    },
+    legacy: true,
+    async legacyExecute(message) {
+      return sendQueueView(message, 0);
+    },
+  };
+}
+
+function volumeCommand() {
+  return {
+    name: 'volume',
+    description: 'Show or set the playback volume (0-200)',
+    data: {
+      name: 'volume',
+      description: 'Show or set the playback volume (0-200)',
+      options: [
+        { name: 'level', description: 'Volume level (0-200)', type: 4, required: false, min_value: 0, max_value: 200 },
+      ],
+    },
+    slash: true,
+    cooldown: 0,
+    permissions: ['@everyone'],
+    async execute(interaction) {
+      const guildId = interaction.guildId;
+      const level = interaction.options.getInteger('level');
+      if (level === null) {
+        const v = player.getVolume(guildId);
+        return interaction.reply({ content: `🔊 Volume: ${v.level}%${v.isMuted ? ' (muted)' : ''}`, flags: MessageFlags.Ephemeral });
+      }
+      // Setter path: requires queue + voice channel.
+      const q = player.getQueue(guildId);
+      if (!q) return interaction.reply({ content: '❌ Nothing is playing right now.', flags: MessageFlags.Ephemeral });
+      const member = interaction.member;
+      const botMember = interaction.guild.members.me;
+      if (!member?.voice?.channel || member.voice.channelId !== botMember?.voice?.channelId) {
+        return interaction.reply({ content: '❌ Join the same voice channel to change volume.', flags: MessageFlags.Ephemeral });
+      }
+      try {
+        player.setVolume(guildId, level);
+        return interaction.reply({ content: `🔊 Volume: ${level}%`, flags: MessageFlags.Ephemeral });
+      } catch (e) {
+        console.error('[music] volume:', e.message);
+        return interaction.reply({ content: '❌ Could not set volume.', flags: MessageFlags.Ephemeral });
+      }
+    },
+    legacy: true,
+    async legacyExecute(message, args) {
+      if (!args[0]) {
+        const v = player.getVolume(message.guild.id);
+        return message.reply(`🔊 Volume: ${v.level}%${v.isMuted ? ' (muted)' : ''}`);
+      }
+      const level = parseInt(args[0], 10);
+      if (Number.isNaN(level) || level < 0 || level > 200) return message.reply('Usage: `!volume [0-200]`');
+      const q = player.getQueue(message.guild.id);
+      if (!q) return message.reply('❌ Nothing is playing right now.');
+      const botMember = message.guild.members.me;
+      if (!message.member?.voice?.channel || message.member.voice.channelId !== botMember?.voice?.channelId) {
+        return message.reply('❌ Join the same voice channel to change volume.');
+      }
+      try { player.setVolume(message.guild.id, level); return message.reply(`🔊 Volume: ${level}%`); }
+      catch (e) { console.error('[music] volume:', e.message); return message.reply('❌ Could not set volume.'); }
+    },
+  };
+}
+
+function nowPlayingCommand() {
+  return {
+    name: 'nowplaying',
+    description: 'Re-post the persistent Now Playing message',
+    data: { name: 'nowplaying', description: 'Re-post the persistent Now Playing message', options: [] },
+    slash: true,
+    cooldown: 0,
+    permissions: ['@everyone'],
+    async execute(interaction) {
+      const guildId = interaction.guildId;
+      const q = player.getQueue(guildId);
+      if (!q) return interaction.reply({ content: '❌ Nothing is playing right now.', flags: MessageFlags.Ephemeral });
+      const track = q.currentTrack;
+      const s = state.getOrCreate(guildId);
+      const sent = await interaction.channel.send({
+        embeds: [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)],
+        components: nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused()),
+      });
+      s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
+      return interaction.reply({ content: '✅ Now Playing message posted.', flags: MessageFlags.Ephemeral });
+    },
+    legacy: true,
+    async legacyExecute(message) {
+      const guildId = message.guild.id;
+      const q = player.getQueue(guildId);
+      if (!q) return message.reply('❌ Nothing is playing right now.');
+      const track = q.currentTrack;
+      const s = state.getOrCreate(guildId);
+      const sent = await message.channel.send({
+        embeds: [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)],
+        components: nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused()),
+      });
+      s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
+      return message.reply('✅ Now Playing message posted.');
+    },
+  };
+}
+
+module.exports = {
+  getCommands: () => [queueCommand(), volumeCommand(), nowPlayingCommand()],
+};
