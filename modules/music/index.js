@@ -17,13 +17,11 @@ module.exports = {
   async init(client, bot) {
     console.log('Music module initializing...');
     await player.init(client, bot);
-    router.bind(client, bot);
     console.log('Music module initialized successfully!');
   },
 
   async shutdown() {
     console.log('Music module shutting down...');
-    router.unbind();
     await player.shutdown();
     console.log('Music module shut down successfully!');
   },

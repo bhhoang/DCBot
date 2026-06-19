@@ -1,20 +1,11 @@
-// modules/music/interactions/router.js — single interactionCreate listener that
-// dispatches by customId prefix. Owns the listener reference so it can be
-// unregistered on shutdown.
+// modules/music/interactions/router.js — single interactionCreate handler
+// that dispatches by customId prefix. Listener registration is owned by the
+// module's `events` array; this file only exports the handler function.
 const buttons = require('./buttons');
 const selects = require('./selects');
 const modals = require('./modals');
 
 const PREFIX = 'music:';
-const SKIP_PREFIXES = new Set(['music:vol:set:']); // handled in modals.js, not buttons
-
-let listenerRef = null;
-
-function bind(client, bot) {
-  if (listenerRef) return; // idempotent
-  listenerRef = (interaction) => handleInteraction(interaction, bot);
-  client.on('interactionCreate', listenerRef);
-}
 
 async function handleInteraction(interaction, bot) {
   if (!interaction.customId || !interaction.customId.startsWith(PREFIX)) return;
@@ -29,14 +20,4 @@ async function handleInteraction(interaction, bot) {
   }
 }
 
-function unbind() {
-  if (listenerRef) {
-    // Note: client.off() requires the same function reference.
-    // We don't have a handle to the client here, so caller (shutdown) must
-    // call router.unbind before player.destroy. We expose a removeListener
-    // helper that takes the client so the module can pass it in.
-  }
-  listenerRef = null;
-}
-
-module.exports = { bind, unbind, handleInteraction, PREFIX };
+module.exports = { handleInteraction, PREFIX };
