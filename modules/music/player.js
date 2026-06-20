@@ -39,13 +39,19 @@ async function init(client, bot) {
     await refreshNowPlaying(queue, track, 'playing');
   });
 
-  player.events.on(GuildQueueEvent.PlayerPause, async (queue) => {
-    await refreshNowPlaying(queue, queue.currentTrack, 'paused');
-  });
-
-  player.events.on(GuildQueueEvent.PlayerResume, async (queue) => {
-    await refreshNowPlaying(queue, queue.currentTrack, 'playing');
-  });
+  // NOTE: We intentionally do NOT subscribe to PlayerPause / PlayerResume
+  // events here. The button handler (modules/music/interactions/buttons.js)
+  // and slash command handler (modules/music/commands/transport.js) both
+  // explicitly call player.onQueueUpdate() after pause/resume, which is
+  // the sole source of UI refresh for user-initiated pause/resume.
+  //
+  // Subscribing here would cause two concurrent refreshNowPlaying() calls
+  // per pause/resume action (one from the event, one from the explicit
+  // onQueueUpdate call), racing on the same Discord message. Discord.js
+  // rate-limits duplicate message edits within a short window and the
+  // .catch(() => {}) in refreshNowPlaying swallows the error silently,
+  // so the user would see no UI update at all. The explicit calls are
+  // authoritative.
 
   player.events.on(GuildQueueEvent.EmptyQueue, async (queue) => {
     await refreshNowPlaying(queue, null, 'empty');

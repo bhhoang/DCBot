@@ -158,7 +158,13 @@ async function refreshNowPlaying(queue, track, mode) {
     embed = nowPlayingEmbed(track, requestedBy, s.loopMode, s.volume);
     rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ false, /*isPaused=*/ mode === 'paused');
   }
-  await message.edit({ embeds: [embed], components: rows }).catch(() => {});
+  await message.edit({ embeds: [embed], components: rows }).catch((err) => {
+    // Log the failure so we can diagnose silent UI-update bugs. The channel-fetch
+    // and message-fetch errors above are already swallowed intentionally (they
+    // can fire if the bot was kicked or the message was deleted); this is the
+    // edit call itself failing, which is the operation we care about.
+    console.error('[music] refreshNowPlaying message.edit failed:', err.message);
+  });
 }
 
 module.exports = {
