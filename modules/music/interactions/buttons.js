@@ -1,7 +1,8 @@
 // modules/music/interactions/buttons.js — all button handlers, dispatched
 // from the router by customId.
-const { MessageFlags } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { IDS } = require('../ui/components');
+const { nowPlayingEmbed } = require('../ui/embeds');
 const player = require('../player');
 const state = require('../state');
 const { sendQueueView } = require('./selects'); // defined in Task 8; forward-declared as export
@@ -36,6 +37,22 @@ async function ephemeral(interaction, content) {
   return interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => {});
 }
 
+// Build the embed + components for the persistent Now Playing message in its
+// CURRENT state. Reads the queue + state directly so the caller can use this
+// for either `interaction.update()` (updating the persistent message in place)
+// or `channel.send()` (creating it for the first time).
+function renderNowPlaying(guildId) {
+  const q = player.getQueue(guildId);
+  if (!q) return null;
+  const s = state.get(guildId) || state.getOrCreate(guildId);
+  const isPaused = q.node.isPaused();
+  const track = q.currentTrack;
+  const embeds = [nowPlayingEmbed(track, track?.requestedBy?.username, s.loopMode, s.volume)];
+  const { nowPlayingRows } = require('../ui/components');
+  const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused);
+  return { embeds, components };
+}
+
 async function handle(interaction, bot) {
   const id = interaction.customId;
   const guildId = interaction.guildId;
@@ -47,58 +64,70 @@ async function handle(interaction, bot) {
 
   try {
     // === Now Playing transport buttons (no userId in customId) ===
+    //
+    // These buttons live on the persistent Now Playing message. We use
+    // `interaction.update()` to update THAT message in place — the new
+    // button label (Pause↔Resume, volume in footer, etc.) IS the user
+    // feedback. This is the canonical Discord.js pattern for buttons-on-
+    // a-shared-message: the interaction reply IS the message edit.
     if (id === IDS.NP_PAUSE) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
         return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
       }
       await player.pause(guildId);
-      // Refresh the persistent Now Playing message so the Pause button
-      // swaps to Resume. player.pause() also fires PlayerPause (which calls
-      // refreshNowPlaying), but the event is async — calling onQueueUpdate
-      // here ensures the swap is visible immediately, not racy.
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, '⏸ Paused.');
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, '❌ Nothing to pause.');
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_RESUME) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
         return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
       }
       await player.resume(guildId);
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, '▶ Resumed.');
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, '❌ Nothing to resume.');
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_SKIP_1) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
         return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
       }
       await player.skip(guildId, 1);
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, '⏭ Skipped.');
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, '⏹ Queue empty.');
+      return interaction.update(rendered);
     }
     if (id === 'music:np:stop') {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
         return ephemeral(interaction, '❌ Join the same voice channel to stop playback.');
       }
       await player.stop(guildId);
-      // stop() deletes the queue and clears state; refreshNowPlaying would
-      // early-return because there's no message ref, but the embed text
-      // changes too. Skip the refresh — EmptyQueue will fire and handle it.
-      return ephemeral(interaction, '⏹ Stopped.');
+      // stop() deletes the queue and clears state; the EmptyQueue event
+      // will render the empty embed and update the persistent message.
+      // For the button click response, send a minimal ack with the new
+      // (empty) state — we need at least one embed for Discord to accept
+      // the update.
+      return interaction.update({
+        embeds: [new EmbedBuilder().setTitle('🎵 Nothing playing').setDescription('Use `/play <query>` to start a new session.').setColor(0x95a5a6)],
+        components: [],
+      });
     }
     if (id === IDS.NP_LOOP) {
       const s = state.getOrCreate(guildId);
       const next = s.loopMode === 'off' ? 'track' : s.loopMode === 'track' ? 'queue' : 'off';
       player.setLoop(guildId, next);
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, `🔁 Loop: ${next}`);
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, `🔁 Loop: ${next}`);
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_SHUFFLE) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
         return ephemeral(interaction, '❌ Join the same voice channel to shuffle.');
       }
       await player.shuffle(guildId);
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, '🔀 Queue shuffled.');
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, '🔀 Queue shuffled.');
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_QUEUE) {
       return sendQueueView(interaction, 0);
@@ -107,21 +136,23 @@ async function handle(interaction, bot) {
       const s = state.getOrCreate(guildId);
       const next = Math.max(0, s.volume - 10);
       player.setVolume(guildId, next);
-      // Refresh so the embed footer shows the new volume immediately.
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, `🔉 Volume: ${next}%`);
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, `🔉 Volume: ${next}%`);
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_VOL_UP) {
       const s = state.getOrCreate(guildId);
       const next = Math.min(200, s.volume + 10);
       player.setVolume(guildId, next);
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, `🔊 Volume: ${next}%`);
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, `🔊 Volume: ${next}%`);
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_VOL_MUTE) {
       const r = player.toggleMute(guildId);
-      await player.onQueueUpdate(guildId);
-      return ephemeral(interaction, r.isMuted ? '🔇 Muted.' : `🔊 Volume: ${r.level}%`);
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, r.isMuted ? '🔇 Muted.' : `🔊 Volume: ${r.level}%`);
+      return interaction.update(rendered);
     }
     if (id === IDS.NP_VOL_OPEN) {
       return openVolumeModal(interaction);
@@ -167,7 +198,15 @@ async function handle(interaction, bot) {
       const ownerId = id.slice(IDS.SEARCH_CANCEL.length);
       if (ownerId !== userId) return;
       state.clearPicker(userId);
-      return interaction.update({ content: '✖ Search cancelled.', embeds: [], components: [] });
+      // Delete the ephemeral search-picker message rather than replacing
+      // it with empty content. Discord rejects empty updates with code 50006.
+      return interaction.message.delete().catch(() => {
+        return interaction.update({
+          content: '✖ Search cancelled.',
+          embeds: [],
+          components: [],
+        });
+      });
     }
 
     // === Queue view (userId in customId) ===
@@ -187,7 +226,18 @@ async function handle(interaction, bot) {
     if (id.startsWith(IDS.QUEUE_CLOSE)) {
       const ownerId = id.slice(IDS.QUEUE_CLOSE.length);
       if (ownerId !== userId) return;
-      return interaction.update({ embeds: [], components: [] });
+      // Delete the ephemeral queue-view message. Discord rejects empty
+      // updates ({content, embeds: [], components: []}), so we must
+      // actually delete the message instead of replacing it with nothing.
+      return interaction.message.delete().catch(() => {
+        // Fallback: if delete fails (e.g., missing permissions), at least
+        // acknowledge the click so the user doesn't see "interaction failed".
+        return interaction.update({
+          content: '✖ Queue view closed.',
+          embeds: [],
+          components: [],
+        });
+      });
     }
     if (id.startsWith(IDS.QUEUE_CLEAR)) {
       const ownerId = id.slice(IDS.QUEUE_CLEAR.length);
