@@ -4,6 +4,7 @@ const state = require('../state');
 const player = require('../player');
 const { queueEmbed } = require('../ui/embeds');
 const { queueRows, IDS } = require('../ui/components');
+const { musicEmojiStr } = require('../ui/icons');
 
 async function sendQueueView(interaction, pageIndex) {
   const guildId = interaction.guildId;
@@ -40,13 +41,13 @@ async function handle(interaction, bot) {
     if (!picker) return interaction.update({ content: '⏰ Picker expired.', embeds: [], components: [] });
     const trackIndex = parseInt(interaction.values[0], 10);
     const track = picker.tracks[trackIndex];
-    if (!track) return interaction.update({ content: '❌ Invalid selection.', embeds: [], components: [] });
+    if (!track) return interaction.update({ content: `${musicEmojiStr('cancel', '✕')} Invalid selection.`, embeds: [], components: [] });
 
     // Need a voice channel to queue the track. Picker does not guarantee the user
     // is still in a voice channel — re-check.
     const voiceChannel = interaction.member.voice.channel;
     if (!voiceChannel) {
-      return interaction.update({ content: '❌ Join a voice channel to play tracks.', embeds: [], components: [] });
+      return interaction.update({ content: `${musicEmojiStr('cancel', '✕')} Join a voice channel to play tracks.`, embeds: [], components: [] });
     }
 
     try {
@@ -57,14 +58,14 @@ async function handle(interaction, bot) {
       if (!s.nowPlayingMessage) {
         const sent = await interaction.channel.send({
           embeds: [require('../ui/embeds').nowPlayingEmbed(track, interaction.user.username, s.loopMode, s.volume)],
-          components: require('../ui/components').nowPlayingRows(s.loopMode, s.volume, false, false),
+          components: require('../ui/components').nowPlayingRows(s.loopMode, s.volume, false, false, false),
         });
         s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
       }
-      return interaction.update({ content: `✅ Queued: **${track.title}**`, embeds: [], components: [] });
+      return interaction.update({ content: `${musicEmojiStr('check', '✓')} Queued: **${track.title}**`, embeds: [], components: [] });
     } catch (error) {
       console.error('[music] addTrack error:', error.message);
-      return interaction.update({ content: '❌ Could not queue that track.', embeds: [], components: [] });
+      return interaction.update({ content: `${musicEmojiStr('cancel', '✕')} Could not queue that track.`, embeds: [], components: [] });
     }
   }
 
@@ -77,7 +78,7 @@ async function handle(interaction, bot) {
     const trackIndex = parseInt(interaction.values[0], 10);
     const tracks = q.tracks.data;
     if (trackIndex < 0 || trackIndex >= tracks.length) {
-      return interaction.update({ content: '❌ Invalid selection.', embeds: [], components: [] });
+      return interaction.update({ content: `${musicEmojiStr('cancel', '✕')} Invalid selection.`, embeds: [], components: [] });
     }
     const removed = tracks[trackIndex];
     q.tracks.remove(trackIndex);

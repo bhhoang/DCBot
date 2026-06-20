@@ -4,12 +4,15 @@
   "description": "Music player module with YouTube support",
   "main": "index.js",
   "dependencies": {
-    "@discordjs/voice": "^0.16.1",
-    "discord-player": "^6.6.6",
-    "play-dl": "^1.9.7", 
+    "@discordjs/voice": "^0.19.2",
+    "discord-player": "^7.2.0",
+    "discord-player-youtubei": "^2.0.0",
+    "@discord-player/extractor": "^7.1.0",
+    "youtubei.js": "^16.0.1",
     "ffmpeg-static": "^5.2.0",
-    "sodium-native": "^4.0.4",
-    "libsodium-wrappers": "^0.7.13"
+    "opusscript": "^0.1.1",
+    "libsodium-wrappers": "^0.7.13",
+    "youtube-dl-exec": "^3.0.10"
   },
   "author": "",
   "license": "MIT"

@@ -4,20 +4,21 @@ const player = require('../player');
 const state = require('../state');
 const { searchEmbed } = require('../ui/embeds');
 const { searchRows } = require('../ui/components');
+const { musicEmojiStr } = require('../ui/icons');
 
 async function runSearch(source, query, isLegacy) {
   // Voice channel check
   const member = isLegacy ? source.member : source.member;
   const voiceChannel = member?.voice?.channel;
   if (!voiceChannel) {
-    const content = '❌ Join a voice channel first.';
+    const content = `${musicEmojiStr('cancel', '✕')} Join a voice channel first.`;
     if (isLegacy) return source.reply(content);
     return source.reply({ content, flags: MessageFlags.Ephemeral });
   }
   const botMember = source.guild.members.me;
   const perms = voiceChannel.permissionsFor(botMember);
   if (!perms.has(PermissionsBitField.Flags.Connect) || !perms.has(PermissionsBitField.Flags.Speak)) {
-    const content = '❌ I need Connect + Speak permissions in your voice channel.';
+    const content = `${musicEmojiStr('cancel', '✕')} I need Connect + Speak permissions in your voice channel.`;
     if (isLegacy) return source.reply(content);
     return source.reply({ content, flags: MessageFlags.Ephemeral });
   }
@@ -35,13 +36,13 @@ async function runSearch(source, query, isLegacy) {
     tracks = await player.search(query);
   } catch (error) {
     console.error('[music] search error:', error.message);
-    const content = `❌ Couldn't search: ${query}`;
+    const content = `${musicEmojiStr('cancel', '✕')} Couldn't search: ${query}`;
     if (isLegacy) return statusMsg.edit(content);
     return source.editReply({ content });
   }
 
   if (!tracks || tracks.length === 0) {
-    const content = `❌ No results for: ${query}`;
+    const content = `${musicEmojiStr('cancel', '✕')} No results for: ${query}`;
     if (isLegacy) return statusMsg.edit(content);
     return source.editReply({ content });
   }
@@ -93,7 +94,7 @@ module.exports = {
     legacy: true,
     async legacyExecute(message, args, bot) {
       const query = args.join(' ');
-      if (!query) return message.reply('❌ Provide a song name or URL.');
+      if (!query) return message.reply(`${musicEmojiStr('cancel', '✕')} Provide a song name or URL.`);
       return runSearch(message, query, true);
     },
   }),

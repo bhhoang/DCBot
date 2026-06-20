@@ -1,6 +1,7 @@
 // modules/music/commands/transport.js — pause, resume, skip, stop, loop, shuffle.
 const { MessageFlags } = require('discord.js');
 const player = require('../player');
+const { musicEmojiStr } = require('../ui/icons');
 
 function inSameVoice(member, botMember) {
   if (!member?.voice?.channel) return false;
@@ -18,10 +19,10 @@ function requireQueue(source, isLegacy) {
   const guildId = isLegacy ? source.guild.id : source.guildId;
   const q = player.getQueue(guildId);
   if (!q) {
-    return ephemeral(source, '❌ Nothing is playing right now.', isLegacy);
+    return ephemeral(source, `${musicEmojiStr('cancel', '✕')} Nothing is playing right now.`, isLegacy);
   }
   if (!inSameVoice(source.member, source.guild.members.me)) {
-    return ephemeral(source, '❌ Join the same voice channel to control playback.', isLegacy);
+    return ephemeral(source, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to control playback.`, isLegacy);
   }
   return null;
 }
@@ -41,7 +42,7 @@ function pauseCommand() {
         await player.onQueueUpdate(interaction.guildId);
         return ephemeral(interaction, '⏸ Paused.', false);
       }
-      catch (e) { console.error('[music] pause:', e.message); return ephemeral(interaction, '❌ Could not pause.', false); }
+      catch (e) { console.error('[music] pause:', e.message); return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Could not pause.`, false); }
     },
     legacy: true,
     async legacyExecute(message) {
@@ -51,7 +52,7 @@ function pauseCommand() {
         await player.onQueueUpdate(message.guild.id);
         return message.reply('⏸ Paused.');
       }
-      catch (e) { console.error('[music] pause:', e.message); return message.reply('❌ Could not pause.'); }
+      catch (e) { console.error('[music] pause:', e.message); return message.reply(`${musicEmojiStr('cancel', '✕')} Could not pause.`); }
     },
   };
 }
@@ -71,7 +72,7 @@ function resumeCommand() {
         await player.onQueueUpdate(interaction.guildId);
         return ephemeral(interaction, '▶ Resumed.', false);
       }
-      catch (e) { console.error('[music] resume:', e.message); return ephemeral(interaction, '❌ Could not resume.', false); }
+      catch (e) { console.error('[music] resume:', e.message); return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Could not resume.`, false); }
     },
     legacy: true,
     async legacyExecute(message) {
@@ -81,7 +82,7 @@ function resumeCommand() {
         await player.onQueueUpdate(message.guild.id);
         return message.reply('▶ Resumed.');
       }
-      catch (e) { console.error('[music] resume:', e.message); return message.reply('❌ Could not resume.'); }
+      catch (e) { console.error('[music] resume:', e.message); return message.reply(`${musicEmojiStr('cancel', '✕')} Could not resume.`); }
     },
   };
 }
@@ -108,7 +109,7 @@ function skipCommand() {
         await player.onQueueUpdate(interaction.guildId);
         return ephemeral(interaction, `⏭ Skipped ${count}.`, false);
       }
-      catch (e) { console.error('[music] skip:', e.message); return ephemeral(interaction, '❌ Could not skip.', false); }
+      catch (e) { console.error('[music] skip:', e.message); return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Could not skip.`, false); }
     },
     legacy: true,
     async legacyExecute(message, args) {
@@ -119,7 +120,7 @@ function skipCommand() {
         await player.onQueueUpdate(message.guild.id);
         return message.reply(`⏭ Skipped ${count}.`);
       }
-      catch (e) { console.error('[music] skip:', e.message); return message.reply('❌ Could not skip.'); }
+      catch (e) { console.error('[music] skip:', e.message); return message.reply(`${musicEmojiStr('cancel', '✕')} Could not skip.`); }
     },
   };
 }
@@ -134,22 +135,22 @@ function stopCommand() {
     permissions: ['@everyone'],
     async execute(interaction) {
       const guildId = interaction.guildId;
-      if (!player.getQueue(guildId)) return ephemeral(interaction, '❌ Nothing is playing right now.', false);
+      if (!player.getQueue(guildId)) return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Nothing is playing right now.`, false);
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
-        return ephemeral(interaction, '❌ Join the same voice channel to stop playback.', false);
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to stop playback.`, false);
       }
       try { await player.stop(guildId); return ephemeral(interaction, '⏹ Stopped.', false); }
-      catch (e) { console.error('[music] stop:', e.message); return ephemeral(interaction, '❌ Could not stop.', false); }
+      catch (e) { console.error('[music] stop:', e.message); return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Could not stop.`, false); }
     },
     legacy: true,
     async legacyExecute(message) {
       const guildId = message.guild.id;
-      if (!player.getQueue(guildId)) return message.reply('❌ Nothing is playing right now.');
+      if (!player.getQueue(guildId)) return message.reply(`${musicEmojiStr('cancel', '✕')} Nothing is playing right now.`);
       if (!inSameVoice(message.member, message.guild.members.me)) {
-        return message.reply('❌ Join the same voice channel to stop playback.');
+        return message.reply(`${musicEmojiStr('cancel', '✕')} Join the same voice channel to stop playback.`);
       }
       try { await player.stop(guildId); return message.reply('⏹ Stopped.'); }
-      catch (e) { console.error('[music] stop:', e.message); return message.reply('❌ Could not stop.'); }
+      catch (e) { console.error('[music] stop:', e.message); return message.reply(`${musicEmojiStr('cancel', '✕')} Could not stop.`); }
     },
   };
 }
@@ -181,7 +182,7 @@ function loopCommand() {
         player.setLoop(interaction.guildId, mode);
         await player.onQueueUpdate(interaction.guildId);
         return ephemeral(interaction, `🔁 Loop: ${mode}`, false);
-      } catch (e) { console.error('[music] loop:', e.message); return ephemeral(interaction, '❌ Could not set loop mode.', false); }
+      } catch (e) { console.error('[music] loop:', e.message); return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Could not set loop mode.`, false); }
     },
     legacy: true,
     async legacyExecute(message, args) {
@@ -192,7 +193,7 @@ function loopCommand() {
         await player.onQueueUpdate(message.guild.id);
         return message.reply(`🔁 Loop: ${mode}`);
       }
-      catch (e) { console.error('[music] loop:', e.message); return message.reply('❌ Could not set loop mode.'); }
+      catch (e) { console.error('[music] loop:', e.message); return message.reply(`${musicEmojiStr('cancel', '✕')} Could not set loop mode.`); }
     },
   };
 }
@@ -212,7 +213,7 @@ function shuffleCommand() {
         await player.onQueueUpdate(interaction.guildId);
         return ephemeral(interaction, '🔀 Queue shuffled.', false);
       }
-      catch (e) { console.error('[music] shuffle:', e.message); return ephemeral(interaction, '❌ Could not shuffle.', false); }
+      catch (e) { console.error('[music] shuffle:', e.message); return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Could not shuffle.`, false); }
     },
     legacy: true,
     async legacyExecute(message) {
@@ -222,7 +223,7 @@ function shuffleCommand() {
         await player.onQueueUpdate(message.guild.id);
         return message.reply('🔀 Queue shuffled.');
       }
-      catch (e) { console.error('[music] shuffle:', e.message); return message.reply('❌ Could not shuffle.'); }
+      catch (e) { console.error('[music] shuffle:', e.message); return message.reply(`${musicEmojiStr('cancel', '✕')} Could not shuffle.`); }
     },
   };
 }

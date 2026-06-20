@@ -2,6 +2,7 @@
 const { MessageFlags } = require('discord.js');
 const player = require('../player');
 const { volumeModal } = require('../ui/components');
+const { musicEmojiStr } = require('../ui/icons');
 
 async function openVolumeModal(interaction) {
   return interaction.showModal(volumeModal());
@@ -15,7 +16,7 @@ async function handleVolumeSubmit(interaction, bot) {
     // Discord modals always close on submit; we reply with an ephemeral error
     // and the user can re-open via the Now Playing button.
     return interaction.reply({
-      content: `❌ Invalid volume "${raw}". Must be an integer 0-200.`,
+      content: `${musicEmojiStr('cancel', '✕')} Invalid volume "${raw}". Must be an integer 0-200.`,
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -28,7 +29,7 @@ async function handleVolumeSubmit(interaction, bot) {
     return interaction.reply({ content: `🔊 Volume: ${level}%`, flags: MessageFlags.Ephemeral });
   } catch (error) {
     console.error('[music] volume set error:', error.message);
-    return interaction.reply({ content: '❌ Could not set volume.', flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: `${musicEmojiStr('cancel', '✕')} Could not set volume.`, flags: MessageFlags.Ephemeral });
   }
 }
 

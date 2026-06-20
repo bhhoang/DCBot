@@ -5,6 +5,7 @@ const {
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
+const { musicEmoji } = require('./icons');
 
 const IDS = {
   NP_PAUSE: 'music:np:pause',
@@ -28,78 +29,85 @@ const IDS = {
   QUEUE_CLEAR: 'music:queue:clear:',
 };
 
-function nowPlayingRows(loopMode, volume, disabled, isPaused = false) {
-  const loopLabel = loopMode === 'off' ? 'Loop' : `Loop: ${loopMode}`;
-  const muteLabel = volume === 0 ? 'Unmute' : 'Mute';
-  const volIcon = volume === 0 ? '🔇' : volume < 50 ? '🔉' : '🔊';
+function nowPlayingRows(loopMode, volume, disabled, isPaused = false, isMuted = false) {
+  const loopLabel = loopMode === 'off' ? 'Loop off' : `Loop ${loopMode}`;
+  const loopStyle = loopMode !== 'off' ? ButtonStyle.Success : ButtonStyle.Secondary;
+  const loopEmojiKey = loopMode === 'track' ? 'loopTrack' : 'loop';
+  const muteLabel = isMuted ? 'Unmute' : 'Mute';
+  const muteStyle = isMuted ? ButtonStyle.Danger : ButtonStyle.Secondary;
+  const volIcon = isMuted
+    ? musicEmoji('volMute', '🔇')
+    : volume < 50
+      ? musicEmoji('volDown', '🔉')
+      : musicEmoji('volUp', '🔊');
 
-  const row1 = new ActionRowBuilder().addComponents(
+  const transportRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(isPaused ? IDS.NP_RESUME : IDS.NP_PAUSE)
       .setLabel(isPaused ? 'Resume' : 'Pause')
-      .setEmoji(isPaused ? '▶' : '⏸')
-      .setStyle(ButtonStyle.Primary)
+      .setEmoji(isPaused ? musicEmoji('play', '▶') : musicEmoji('pause', '⏸'))
+      .setStyle(isPaused ? ButtonStyle.Success : ButtonStyle.Primary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_SKIP_1)
       .setLabel('Skip')
-      .setEmoji('⏭')
-      .setStyle(ButtonStyle.Primary)
+      .setEmoji(musicEmoji('skip', '⏭'))
+      .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_LOOP)
       .setLabel(loopLabel)
-      .setEmoji('🔁')
-      .setStyle(ButtonStyle.Secondary)
+      .setEmoji(musicEmoji(loopEmojiKey, loopMode === 'track' ? '🔂' : '🔁'))
+      .setStyle(loopStyle)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_SHUFFLE)
       .setLabel('Shuffle')
-      .setEmoji('🔀')
+      .setEmoji(musicEmoji('shuffle', '🔀'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_QUEUE)
       .setLabel('Queue')
-      .setEmoji('📜')
+      .setEmoji(musicEmoji('queue', '📜'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
   );
 
-  const row2 = new ActionRowBuilder().addComponents(
+  const volumeRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(IDS.NP_VOL_DOWN)
-      .setLabel('-10')
-      .setEmoji('🔉')
+      .setLabel('Vol -10')
+      .setEmoji(musicEmoji('volDown', '🔉'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_VOL_UP)
-      .setLabel('+10')
-      .setEmoji('🔊')
+      .setLabel('Vol +10')
+      .setEmoji(musicEmoji('volUp', '🔊'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_VOL_MUTE)
       .setLabel(muteLabel)
       .setEmoji(volIcon)
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(muteStyle)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId(IDS.NP_VOL_OPEN)
-      .setLabel('Volume')
-      .setEmoji('🎚')
+      .setLabel('Set Vol')
+      .setEmoji(musicEmoji('volSlider', '🎚'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId('music:np:stop')
       .setLabel('Stop')
-      .setEmoji('⏹')
+      .setEmoji(musicEmoji('stop', '⏹'))
       .setStyle(ButtonStyle.Danger)
       .setDisabled(disabled),
   );
 
-  return [row1, row2];
+  return [transportRow, volumeRow];
 }
 
 function emptyNowPlayingRows() {
@@ -108,7 +116,7 @@ function emptyNowPlayingRows() {
       new ButtonBuilder()
         .setCustomId('music:np:play_hint')
         .setLabel('Play something')
-        .setEmoji('▶')
+        .setEmoji(musicEmoji('play', '▶'))
         .setStyle(ButtonStyle.Primary),
     ),
   ];
@@ -120,7 +128,7 @@ function disconnectedNowPlayingRows() {
       new ButtonBuilder()
         .setCustomId('music:np:play_hint')
         .setLabel('Reconnect via /play')
-        .setEmoji('▶')
+        .setEmoji(musicEmoji('play', '▶'))
         .setStyle(ButtonStyle.Primary)
         .setDisabled(true),
     ),
@@ -155,7 +163,7 @@ function searchRows(picker, pageIndex, totalPages) {
         new ButtonBuilder()
           .setCustomId(IDS.SEARCH_PAGE_PREV + picker.userId)
           .setLabel('Prev')
-          .setEmoji('◀')
+          .setEmoji(musicEmoji('pagePrev', '◀'))
           .setStyle(ButtonStyle.Secondary),
       );
     }
@@ -164,17 +172,17 @@ function searchRows(picker, pageIndex, totalPages) {
         new ButtonBuilder()
           .setCustomId(IDS.SEARCH_PAGE_NEXT + picker.userId)
           .setLabel('Next')
-          .setEmoji('▶')
+          .setEmoji(musicEmoji('pageNext', '▶'))
           .setStyle(ButtonStyle.Secondary),
       );
     }
   }
   navRow.addComponents(
     new ButtonBuilder()
-      .setCustomId(IDS.SEARCH_CANCEL + picker.userId)
-      .setLabel('Cancel')
-      .setEmoji('✖')
-      .setStyle(ButtonStyle.Danger),
+.setCustomId(IDS.SEARCH_CANCEL + picker.userId)
+    .setLabel('Cancel')
+    .setEmoji(musicEmoji('cancel', '✖'))
+    .setStyle(ButtonStyle.Danger),
   );
 
   return [
@@ -191,33 +199,33 @@ function queueRows(tracks, pageIndex, totalPages, ownerId) {
     if (pageIndex > 0) {
       navRow.addComponents(
         new ButtonBuilder()
-          .setCustomId(IDS.QUEUE_PAGE_PREV + ownerId)
-          .setLabel('Prev')
-          .setEmoji('◀')
-          .setStyle(ButtonStyle.Secondary),
+.setCustomId(IDS.QUEUE_PAGE_PREV + ownerId)
+      .setLabel('Prev')
+      .setEmoji(musicEmoji('pagePrev', '◀'))
+      .setStyle(ButtonStyle.Secondary),
       );
     }
     if (pageIndex < totalPages - 1) {
       navRow.addComponents(
         new ButtonBuilder()
-          .setCustomId(IDS.QUEUE_PAGE_NEXT + ownerId)
-          .setLabel('Next')
-          .setEmoji('▶')
-          .setStyle(ButtonStyle.Secondary),
+.setCustomId(IDS.QUEUE_PAGE_NEXT + ownerId)
+      .setLabel('Next')
+      .setEmoji(musicEmoji('pageNext', '▶'))
+      .setStyle(ButtonStyle.Secondary),
       );
     }
   }
   navRow.addComponents(
     new ButtonBuilder()
-      .setCustomId(IDS.QUEUE_CLEAR + ownerId)
-      .setLabel('Clear All')
-      .setEmoji('🗑')
-      .setStyle(ButtonStyle.Danger),
+.setCustomId(IDS.QUEUE_CLEAR + ownerId)
+    .setLabel('Clear All')
+    .setEmoji(musicEmoji('trash', '🗑'))
+    .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId(IDS.QUEUE_CLOSE + ownerId)
-      .setLabel('Close')
-      .setEmoji('✖')
-      .setStyle(ButtonStyle.Secondary),
+.setCustomId(IDS.QUEUE_CLOSE + ownerId)
+    .setLabel('Close')
+    .setEmoji(musicEmoji('cancel', '✖'))
+    .setStyle(ButtonStyle.Secondary),
   );
 
   // Discord's StringSelectMenu requires 1-25 options. If this page has no

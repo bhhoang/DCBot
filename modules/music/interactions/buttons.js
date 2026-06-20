@@ -3,6 +3,7 @@
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { IDS } = require('../ui/components');
 const { nowPlayingEmbed } = require('../ui/embeds');
+const { musicEmoji, musicEmojiStr } = require('../ui/icons');
 const player = require('../player');
 const state = require('../state');
 const { sendQueueView } = require('./selects'); // defined in Task 8; forward-declared as export
@@ -46,10 +47,11 @@ function renderNowPlaying(guildId) {
   if (!q) return null;
   const s = state.get(guildId) || state.getOrCreate(guildId);
   const isPaused = q.node.isPaused();
+  const isMuted = s.preMuteVolume !== null;
   const track = q.currentTrack;
   const embeds = [nowPlayingEmbed(track, track?.requestedBy?.username, s.loopMode, s.volume)];
   const { nowPlayingRows } = require('../ui/components');
-  const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused);
+  const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, isMuted);
   return { embeds, components };
 }
 
@@ -72,25 +74,27 @@ async function handle(interaction, bot) {
     // a-shared-message: the interaction reply IS the message edit.
     if (id === IDS.NP_PAUSE) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
-        return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to control playback.`);
       }
       await player.pause(guildId);
+      await player.onQueueUpdate(guildId).catch(() => {});
       const rendered = renderNowPlaying(guildId);
-      if (!rendered) return ephemeral(interaction, '❌ Nothing to pause.');
+      if (!rendered) return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Nothing to pause.`);
       return interaction.update(rendered);
     }
     if (id === IDS.NP_RESUME) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
-        return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to control playback.`);
       }
       await player.resume(guildId);
+      await player.onQueueUpdate(guildId).catch(() => {});
       const rendered = renderNowPlaying(guildId);
-      if (!rendered) return ephemeral(interaction, '❌ Nothing to resume.');
+      if (!rendered) return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Nothing to resume.`);
       return interaction.update(rendered);
     }
     if (id === IDS.NP_SKIP_1) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
-        return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to control playback.`);
       }
       await player.skip(guildId, 1);
       const rendered = renderNowPlaying(guildId);
@@ -99,7 +103,7 @@ async function handle(interaction, bot) {
     }
     if (id === 'music:np:stop') {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
-        return ephemeral(interaction, '❌ Join the same voice channel to stop playback.');
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to stop playback.`);
       }
       await player.stop(guildId);
       // stop() deletes the queue and clears state; the EmptyQueue event
@@ -108,7 +112,7 @@ async function handle(interaction, bot) {
       // (empty) state — we need at least one embed for Discord to accept
       // the update.
       return interaction.update({
-        embeds: [new EmbedBuilder().setTitle('🎵 Nothing playing').setDescription('Use `/play <query>` to start a new session.').setColor(0x95a5a6)],
+        embeds: [new EmbedBuilder().setTitle(`${musicEmojiStr('stop', '🎵')} Nothing playing`).setDescription('Use `/play <query>` to start a new session.').setColor(0x95a5a6)],
         components: [],
       });
     }
@@ -122,7 +126,7 @@ async function handle(interaction, bot) {
     }
     if (id === IDS.NP_SHUFFLE) {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
-        return ephemeral(interaction, '❌ Join the same voice channel to shuffle.');
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to shuffle.`);
       }
       await player.shuffle(guildId);
       const rendered = renderNowPlaying(guildId);
@@ -262,7 +266,7 @@ async function handle(interaction, bot) {
     }
   } catch (error) {
     console.error('[music] button handler error:', error.message);
-    return ephemeral(interaction, '❌ Something went wrong.');
+    return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Something went wrong.`);
   }
 }
 

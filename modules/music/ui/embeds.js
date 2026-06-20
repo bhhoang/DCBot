@@ -4,6 +4,7 @@
 const { EmbedBuilder, Colors } = require('discord.js');
 const state = require('../state');
 const { nowPlayingRows, emptyNowPlayingRows, disconnectedNowPlayingRows } = require('./components');
+const { musicEmojiStr } = require('./icons');
 
 function formatDuration(input) {
   if (input === undefined || input === null || input === '') return 'unknown';
@@ -61,14 +62,12 @@ function formatTrackDuration(track) {
 
 function nowPlayingEmbed(track, requestedBy, loopMode, volume) {
   const embed = new EmbedBuilder()
-    .setTitle('🎵 Now Playing')
+    .setTitle(`${musicEmojiStr('play', '🎵')} Now Playing`)
     .setDescription(`**${track.title}**`)
     .setColor(Colors.Green)
     .addFields(
       { name: 'Duration', value: formatTrackDuration(track), inline: true },
       { name: 'Requested by', value: requestedBy || 'unknown', inline: true },
-      { name: '\u200b', value: '\u200b', inline: true },
-      { name: 'Loop', value: loopMode || 'off', inline: true },
       { name: 'Volume', value: `${volume ?? 100}%`, inline: true },
     );
   if (track.thumbnail) embed.setThumbnail(track.thumbnail);
@@ -77,14 +76,14 @@ function nowPlayingEmbed(track, requestedBy, loopMode, volume) {
 
 function emptyNowPlayingEmbed() {
   return new EmbedBuilder()
-    .setTitle('🎵 Nothing playing')
+    .setTitle(`${musicEmojiStr('play', '🎵')} Nothing playing`)
     .setDescription('Use `/play <query>` to start a session.')
     .setColor(Colors.Grey);
 }
 
 function disconnectedNowPlayingEmbed() {
   return new EmbedBuilder()
-    .setTitle('🎵 Disconnected')
+    .setTitle(`${musicEmojiStr('play', '🎵')} Disconnected`)
     .setDescription('Voice connection lost. Use `/play` to start a new session.')
     .setColor(Colors.Red);
 }
@@ -107,14 +106,14 @@ function queueEmbed(tracks, pageIndex, totalPages) {
     return `${idx}. **${t.title}** — ${formatTrackDuration(t)} — @${requester}`;
   }).join('\n');
   return new EmbedBuilder()
-    .setTitle(`📜 Queue — Page ${pageIndex + 1} of ${totalPages}`)
+    .setTitle(`${musicEmojiStr('queue', '📜')} Queue — Page ${pageIndex + 1} of ${totalPages}`)
     .setDescription(lines || 'Queue is empty.')
     .setColor(Colors.Blue);
 }
 
 function errorEmbed(title, detail) {
   return new EmbedBuilder()
-    .setTitle(`❌ ${title}`)
+    .setTitle(`${musicEmojiStr('cancel', '✕')} ${title}`)
     .setDescription(detail || 'Please try again.')
     .setColor(Colors.Red);
 }
@@ -143,6 +142,7 @@ async function refreshNowPlaying(queue, track, mode) {
   }
 
   let embed, rows;
+  const isMuted = s.preMuteVolume !== null;
   if (mode === 'empty') {
     embed = emptyNowPlayingEmbed();
     rows = emptyNowPlayingRows();
@@ -151,12 +151,12 @@ async function refreshNowPlaying(queue, track, mode) {
     rows = disconnectedNowPlayingRows();
   } else   if (mode === 'error') {
     embed = errorEmbed('Playback error', 'The current track failed. Skipping to next if available.');
-    rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ true, /*isPaused=*/ false);
+    rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ true, /*isPaused=*/ false, /*isMuted=*/ isMuted);
   } else {
     // 'playing' or 'paused'
     const requestedBy = track?.requestedBy?.username || 'unknown';
     embed = nowPlayingEmbed(track, requestedBy, s.loopMode, s.volume);
-    rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ false, /*isPaused=*/ mode === 'paused');
+    rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ false, /*isPaused=*/ mode === 'paused', /*isMuted=*/ isMuted);
   }
   await message.edit({ embeds: [embed], components: rows }).catch((err) => {
     // Log the failure so we can diagnose silent UI-update bugs. The channel-fetch
