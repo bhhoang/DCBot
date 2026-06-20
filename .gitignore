@@ -166,3 +166,7 @@ config/config.json
 # Module dependency store (regenerated at boot)
 modules/.store/
 modules/.views/
+
+# Ignore all markdown except README — local docs only
+*.md
+!README.md
