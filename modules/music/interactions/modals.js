@@ -21,6 +21,10 @@ async function handleVolumeSubmit(interaction, bot) {
   }
   try {
     player.setVolume(guildId, level);
+    // Refresh the persistent Now Playing message so the embed footer shows
+    // the new volume. setVolume has no player event we can subscribe to, so
+    // we trigger the refresh from the caller.
+    await player.onQueueUpdate(guildId);
     return interaction.reply({ content: `🔊 Volume: ${level}%`, flags: MessageFlags.Ephemeral });
   } catch (error) {
     console.error('[music] volume set error:', error.message);

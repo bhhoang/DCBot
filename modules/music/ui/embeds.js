@@ -6,10 +6,33 @@ const state = require('../state');
 const { nowPlayingRows, emptyNowPlayingRows, disconnectedNowPlayingRows } = require('./components');
 
 function formatDuration(ms) {
-  if (!ms || ms === 'unknown') return 'unknown';
-  const total = Math.floor(ms / 1000);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
+  if (ms === undefined || ms === null) return 'unknown';
+  if (ms === 'unknown') return 'unknown';
+  // discord-player-youtubei sometimes returns ISO 8601 duration strings for
+  // live streams / shorts (e.g. "PT3M33S"). Parse them; otherwise treat as ms.
+  let totalSec;
+  if (typeof ms === 'string') {
+    if (/^P(T.*)?$/.test(ms)) {
+      const match = ms.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+      if (!match) return 'live';
+      const h = parseInt(match[1] || '0', 10);
+      const m = parseInt(match[2] || '0', 10);
+      const s = parseInt(match[3] || '0', 10);
+      totalSec = h * 3600 + m * 60 + s;
+      if (totalSec === 0) return 'live';
+    } else {
+      const parsed = parseInt(ms, 10);
+      if (Number.isNaN(parsed)) return 'unknown';
+      totalSec = parsed;
+    }
+  } else if (typeof ms === 'number') {
+    if (Number.isNaN(ms) || ms <= 0) return 'live';
+    totalSec = Math.floor(ms / 1000);
+  } else {
+    return 'unknown';
+  }
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 

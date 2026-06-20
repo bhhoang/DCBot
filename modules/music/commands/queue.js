@@ -56,6 +56,7 @@ function volumeCommand() {
       }
       try {
         player.setVolume(guildId, level);
+        await player.onQueueUpdate(guildId);
         return interaction.reply({ content: `🔊 Volume: ${level}%`, flags: MessageFlags.Ephemeral });
       } catch (e) {
         console.error('[music] volume:', e.message);
@@ -76,7 +77,11 @@ function volumeCommand() {
       if (!message.member?.voice?.channel || message.member.voice.channelId !== botMember?.voice?.channelId) {
         return message.reply('❌ Join the same voice channel to change volume.');
       }
-      try { player.setVolume(message.guild.id, level); return message.reply(`🔊 Volume: ${level}%`); }
+      try {
+        player.setVolume(message.guild.id, level);
+        await player.onQueueUpdate(message.guild.id);
+        return message.reply(`🔊 Volume: ${level}%`);
+      }
       catch (e) { console.error('[music] volume:', e.message); return message.reply('❌ Could not set volume.'); }
     },
   };

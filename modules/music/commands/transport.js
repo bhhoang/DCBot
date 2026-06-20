@@ -36,13 +36,21 @@ function pauseCommand() {
     permissions: ['@everyone'],
     async execute(interaction) {
       if (requireQueue(interaction, false) !== null) return;
-      try { await player.pause(interaction.guildId); return ephemeral(interaction, '⏸ Paused.', false); }
+      try {
+        await player.pause(interaction.guildId);
+        await player.onQueueUpdate(interaction.guildId);
+        return ephemeral(interaction, '⏸ Paused.', false);
+      }
       catch (e) { console.error('[music] pause:', e.message); return ephemeral(interaction, '❌ Could not pause.', false); }
     },
     legacy: true,
     async legacyExecute(message) {
       if (requireQueue(message, true) !== null) return;
-      try { await player.pause(message.guild.id); return message.reply('⏸ Paused.'); }
+      try {
+        await player.pause(message.guild.id);
+        await player.onQueueUpdate(message.guild.id);
+        return message.reply('⏸ Paused.');
+      }
       catch (e) { console.error('[music] pause:', e.message); return message.reply('❌ Could not pause.'); }
     },
   };
@@ -58,13 +66,21 @@ function resumeCommand() {
     permissions: ['@everyone'],
     async execute(interaction) {
       if (requireQueue(interaction, false) !== null) return;
-      try { await player.resume(interaction.guildId); return ephemeral(interaction, '▶ Resumed.', false); }
+      try {
+        await player.resume(interaction.guildId);
+        await player.onQueueUpdate(interaction.guildId);
+        return ephemeral(interaction, '▶ Resumed.', false);
+      }
       catch (e) { console.error('[music] resume:', e.message); return ephemeral(interaction, '❌ Could not resume.', false); }
     },
     legacy: true,
     async legacyExecute(message) {
       if (requireQueue(message, true) !== null) return;
-      try { await player.resume(message.guild.id); return message.reply('▶ Resumed.'); }
+      try {
+        await player.resume(message.guild.id);
+        await player.onQueueUpdate(message.guild.id);
+        return message.reply('▶ Resumed.');
+      }
       catch (e) { console.error('[music] resume:', e.message); return message.reply('❌ Could not resume.'); }
     },
   };
@@ -87,14 +103,22 @@ function skipCommand() {
     async execute(interaction) {
       if (requireQueue(interaction, false) !== null) return;
       const count = interaction.options.getInteger('count') ?? 1;
-      try { await player.skip(interaction.guildId, count); return ephemeral(interaction, `⏭ Skipped ${count}.`, false); }
+      try {
+        await player.skip(interaction.guildId, count);
+        await player.onQueueUpdate(interaction.guildId);
+        return ephemeral(interaction, `⏭ Skipped ${count}.`, false);
+      }
       catch (e) { console.error('[music] skip:', e.message); return ephemeral(interaction, '❌ Could not skip.', false); }
     },
     legacy: true,
     async legacyExecute(message, args) {
       if (requireQueue(message, true) !== null) return;
       const count = Math.max(1, Math.min(25, parseInt(args[0], 10) || 1));
-      try { await player.skip(message.guild.id, count); return message.reply(`⏭ Skipped ${count}.`); }
+      try {
+        await player.skip(message.guild.id, count);
+        await player.onQueueUpdate(message.guild.id);
+        return message.reply(`⏭ Skipped ${count}.`);
+      }
       catch (e) { console.error('[music] skip:', e.message); return message.reply('❌ Could not skip.'); }
     },
   };
@@ -155,6 +179,7 @@ function loopCommand() {
       const mode = interaction.options.getString('mode');
       try {
         player.setLoop(interaction.guildId, mode);
+        await player.onQueueUpdate(interaction.guildId);
         return ephemeral(interaction, `🔁 Loop: ${mode}`, false);
       } catch (e) { console.error('[music] loop:', e.message); return ephemeral(interaction, '❌ Could not set loop mode.', false); }
     },
@@ -162,7 +187,11 @@ function loopCommand() {
     async legacyExecute(message, args) {
       const mode = (args[0] || '').toLowerCase();
       if (!['off', 'track', 'queue'].includes(mode)) return message.reply('Usage: `!loop <off|track|queue>`');
-      try { player.setLoop(message.guild.id, mode); return message.reply(`🔁 Loop: ${mode}`); }
+      try {
+        player.setLoop(message.guild.id, mode);
+        await player.onQueueUpdate(message.guild.id);
+        return message.reply(`🔁 Loop: ${mode}`);
+      }
       catch (e) { console.error('[music] loop:', e.message); return message.reply('❌ Could not set loop mode.'); }
     },
   };
@@ -178,13 +207,21 @@ function shuffleCommand() {
     permissions: ['@everyone'],
     async execute(interaction) {
       if (requireQueue(interaction, false) !== null) return;
-      try { await player.shuffle(interaction.guildId); return ephemeral(interaction, '🔀 Queue shuffled.', false); }
+      try {
+        await player.shuffle(interaction.guildId);
+        await player.onQueueUpdate(interaction.guildId);
+        return ephemeral(interaction, '🔀 Queue shuffled.', false);
+      }
       catch (e) { console.error('[music] shuffle:', e.message); return ephemeral(interaction, '❌ Could not shuffle.', false); }
     },
     legacy: true,
     async legacyExecute(message) {
       if (requireQueue(message, true) !== null) return;
-      try { await player.shuffle(message.guild.id); return message.reply('🔀 Queue shuffled.'); }
+      try {
+        await player.shuffle(message.guild.id);
+        await player.onQueueUpdate(message.guild.id);
+        return message.reply('🔀 Queue shuffled.');
+      }
       catch (e) { console.error('[music] shuffle:', e.message); return message.reply('❌ Could not shuffle.'); }
     },
   };

@@ -52,6 +52,11 @@ async function handle(interaction, bot) {
         return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
       }
       await player.pause(guildId);
+      // Refresh the persistent Now Playing message so the Pause button
+      // swaps to Resume. player.pause() also fires PlayerPause (which calls
+      // refreshNowPlaying), but the event is async — calling onQueueUpdate
+      // here ensures the swap is visible immediately, not racy.
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, '⏸ Paused.');
     }
     if (id === IDS.NP_RESUME) {
@@ -59,6 +64,7 @@ async function handle(interaction, bot) {
         return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
       }
       await player.resume(guildId);
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, '▶ Resumed.');
     }
     if (id === IDS.NP_SKIP_1) {
@@ -66,6 +72,7 @@ async function handle(interaction, bot) {
         return ephemeral(interaction, '❌ Join the same voice channel to control playback.');
       }
       await player.skip(guildId, 1);
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, '⏭ Skipped.');
     }
     if (id === 'music:np:stop') {
@@ -73,12 +80,16 @@ async function handle(interaction, bot) {
         return ephemeral(interaction, '❌ Join the same voice channel to stop playback.');
       }
       await player.stop(guildId);
+      // stop() deletes the queue and clears state; refreshNowPlaying would
+      // early-return because there's no message ref, but the embed text
+      // changes too. Skip the refresh — EmptyQueue will fire and handle it.
       return ephemeral(interaction, '⏹ Stopped.');
     }
     if (id === IDS.NP_LOOP) {
       const s = state.getOrCreate(guildId);
       const next = s.loopMode === 'off' ? 'track' : s.loopMode === 'track' ? 'queue' : 'off';
       player.setLoop(guildId, next);
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, `🔁 Loop: ${next}`);
     }
     if (id === IDS.NP_SHUFFLE) {
@@ -86,6 +97,7 @@ async function handle(interaction, bot) {
         return ephemeral(interaction, '❌ Join the same voice channel to shuffle.');
       }
       await player.shuffle(guildId);
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, '🔀 Queue shuffled.');
     }
     if (id === IDS.NP_QUEUE) {
@@ -95,16 +107,20 @@ async function handle(interaction, bot) {
       const s = state.getOrCreate(guildId);
       const next = Math.max(0, s.volume - 10);
       player.setVolume(guildId, next);
+      // Refresh so the embed footer shows the new volume immediately.
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, `🔉 Volume: ${next}%`);
     }
     if (id === IDS.NP_VOL_UP) {
       const s = state.getOrCreate(guildId);
       const next = Math.min(200, s.volume + 10);
       player.setVolume(guildId, next);
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, `🔊 Volume: ${next}%`);
     }
     if (id === IDS.NP_VOL_MUTE) {
       const r = player.toggleMute(guildId);
+      await player.onQueueUpdate(guildId);
       return ephemeral(interaction, r.isMuted ? '🔇 Muted.' : `🔊 Volume: ${r.level}%`);
     }
     if (id === IDS.NP_VOL_OPEN) {
