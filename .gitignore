@@ -159,3 +159,10 @@ dist
 # .pnp.*
 
 # End of https://www.toptal.com/developers/gitignore/api/node,yarn
+
+# Local secrets — do not commit
+config/config.json
+
+# Module dependency store (regenerated at boot)
+modules/.store/
+modules/.views/

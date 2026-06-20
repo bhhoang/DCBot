@@ -391,12 +391,10 @@ class WerewolfGame {
     }
 
     try {
-      const success = await voiceUtils.joinVoice(voiceChannel, this.channel.id);
-      if (success) {
-        this.voiceEnabled = true;
-        this.voiceChannel = voiceChannel;
-        return true;
-      }
+      ttsUtils.joinVoice(voiceChannel);
+      this.voiceEnabled = true;
+      this.voiceChannel = voiceChannel;
+      return true;
     } catch (error) {
       console.error('Error connecting to voice channel:', error);
     }
@@ -626,6 +624,12 @@ class WerewolfGame {
  * Advance to the next night phase
  */
   async advanceNightPhase() {
+    // A natural advance cancels the stale auto-advance timeout.
+    if (this._nightTimeout) {
+      clearTimeout(this._nightTimeout);
+      this._nightTimeout = null;
+    }
+    this._advanceScheduled = false;
     console.log(`Current phase: ${this.nightPhase}`);
     const phases = Object.values(NIGHT_PHASE);
 
@@ -789,9 +793,11 @@ class WerewolfGame {
 
     // Auto-advance night phase after timeout (only needed for human players)
     if (humanPlayers.length > 0) {
-      setTimeout(() => {
-        // Check if we're still in the same phase
-        if (this.state === STATE.NIGHT && this.nightPhase) {
+      const timeoutDay = this.day;
+      const timeoutPhase = this.nightPhase;
+      this._nightTimeout = setTimeout(() => {
+        // Only act if still in the SAME phase of the SAME night.
+        if (this.state === STATE.NIGHT && this.nightPhase === timeoutPhase && this.day === timeoutDay) {
           console.log(`Timeout for ${this.nightPhase} phase reached`);
 
           // Check if all human players have acted
@@ -939,7 +945,10 @@ class WerewolfGame {
             }
 
             // Use a small delay to prevent race conditions when multiple actions are submitted simultaneously
-            setTimeout(() => this.advanceNightPhase(), 1000);
+            if (!this._advanceScheduled) {
+              this._advanceScheduled = true;
+              setTimeout(() => this.advanceNightPhase(), 1000);
+            }
           }
         }
         // For witch, check if the action is complete (not just selecting kill target)
@@ -951,7 +960,10 @@ class WerewolfGame {
 
           if (allWitchesActed) {
             console.log("Witch action complete, advancing to next phase");
-            setTimeout(() => this.advanceNightPhase(), 1000);
+            if (!this._advanceScheduled) {
+              this._advanceScheduled = true;
+              setTimeout(() => this.advanceNightPhase(), 1000);
+            }
           }
         }
         // For other roles, simply check if all have acted
@@ -962,7 +974,10 @@ class WerewolfGame {
 
           if (allPlayersActed) {
             console.log(`All ${this.nightPhase} players have acted, advancing to next phase`);
-            setTimeout(() => this.advanceNightPhase(), 1000);
+            if (!this._advanceScheduled) {
+              this._advanceScheduled = true;
+              setTimeout(() => this.advanceNightPhase(), 1000);
+            }
           }
         }
       } else {
@@ -1369,10 +1384,11 @@ async processAIDiscussions() {
   async startCountdown(seconds, phase, callback) {
     // Clear any existing countdown timers first
     if (this.activeTimers) {
-      Object.values(this.activeTimers).forEach(timerData => {
+      Object.entries(this.activeTimers).forEach(([key, timerData]) => {
         if (timerData.interval) {
           clearInterval(timerData.interval);
         }
+        delete this.activeTimers[key];
       });
     }
 
@@ -1573,7 +1589,8 @@ async processAIDiscussions() {
    */
   async startVoting() {
     this.state = STATE.VOTING;
-    
+    this._votingEnded = false;
+
     // FIXED: Clear all existing votes completely
     this.votes = {};
   
@@ -1629,6 +1646,19 @@ async processAIDiscussions() {
  * @param {string} targetId - ID of voted player, or 'skip'
  * @returns {Object} Result of the vote
  */
+  /**
+   * If every alive player has voted, end voting immediately.
+   * Called after registering both skip and target votes.
+   */
+  checkAllVoted() {
+    const alivePlayers = this.getAlivePlayers();
+    const votedPlayers = alivePlayers.filter(p => p.hasVoted);
+    if (votedPlayers.length === alivePlayers.length) {
+      // Defer to avoid races with concurrent vote processing.
+      setTimeout(() => this.endVoting(), 1000);
+    }
+  }
+
   handleVote(voterId, targetId) {
     // Track voting transactions to prevent spam
     if (!this.votingInProgress) {
@@ -1690,6 +1720,7 @@ async processAIDiscussions() {
         voter.hasVoted = true;
         this.votes[voterId] = 'skip';
         this.votingInProgress.delete(voterId); // Clear voting lock
+        this.checkAllVoted();
         return { success: true, message: "Bạn đã quyết định không bỏ phiếu." };
       } else {
         // Check if target exists and is alive
@@ -1707,15 +1738,8 @@ async processAIDiscussions() {
         // Clear the voting lock for this player
         this.votingInProgress.delete(voterId);
 
-        // Check if all players have voted
-        const alivePlayers = this.getAlivePlayers();
-        const votedPlayers = alivePlayers.filter(p => p.hasVoted);
-
-        if (votedPlayers.length === alivePlayers.length) {
-          // All players have voted, end voting immediately
-          // Use setTimeout to avoid race conditions with concurrent vote processing
-          setTimeout(() => this.endVoting(), 1000);
-        }
+        // Check if all players have voted (shared with the skip branch)
+        this.checkAllVoted();
 
         return { success: true, message: `Bạn đã bỏ phiếu cho ${target.name}.` };
       }
@@ -1733,6 +1757,11 @@ async processAIDiscussions() {
    */
   // Modify endVoting method to add voice announcement
   async endVoting(voteMsg = null) {
+    // Guard against double execution: both the "all voted" path and the
+    // countdown callback can call this. Only the first wins.
+    if (this._votingEnded) return;
+    this._votingEnded = true;
+
     // Clear any countdown messages
     if (this.countdownMessage) {
       try {
@@ -1910,7 +1939,7 @@ async processAIDiscussions() {
       const player = this.players[playerId];
       if (!player.isAlive) continue;
 
-      if (player.role === "WEREWOLF") {
+      if (player.role === "WEREWOLF" || player.role === "CURSED_WEREWOLF") {
         aliveWerewolves++;
       } else {
         aliveVillagers++;
@@ -1986,7 +2015,7 @@ async processAIDiscussions() {
     // Clear all active timers
     if (this.activeTimers) {
       Object.values(this.activeTimers).forEach(timer => {
-        clearInterval(timer);
+        clearInterval(timer.interval);
       });
       this.activeTimers = {};
     }

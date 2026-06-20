@@ -18,7 +18,13 @@ class CommandHandler {
    */
   async registerCommands() {
     console.log('Registering commands...');
-    
+
+    // Rebuild from scratch each call so reloads don't leave stale entries.
+    this.commands.clear();
+    this.slashCommands.clear();
+    this.legacyCommands.clear();
+    this.bot.client.commands?.clear();
+
     // Get all commands from modules
     for (const module of this.bot.moduleLoader.getAllModules()) {
       if (module.commands && Array.isArray(module.commands)) {
@@ -156,13 +162,17 @@ class CommandHandler {
    * Set up command listeners
    */
   setupCommandListeners() {
+    // Bind client listeners exactly once. Reloads rebuild the command
+    // collections but must NOT re-attach listeners (that caused N+1 firing).
+    if (this._listenersBound) return;
+    this._listenersBound = true;
+
     // Handle slash commands
     this.bot.client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
-      
       await this.handleSlashCommand(interaction);
     });
-    
+
     // Handle legacy message commands if enabled
     if (this.bot.config.commands?.enableLegacyCommands) {
       this.bot.client.on('messageCreate', async message => {
@@ -302,26 +312,26 @@ class CommandHandler {
       }
     }
     
-    // Check role-based permissions
-    if (command.permissions && command.permissions.length > 0) {
-      // Everyone has permission
-      if (command.permissions.includes('@everyone')) {
-        return true;
-      }
-      
-      // Check if user has any of the required roles
-      const memberRoles = member.roles.cache;
-      const hasRequiredRole = memberRoles.some(role => {
-        return command.permissions.includes(role.name) || 
-               command.permissions.includes(role.id);
-      });
-      
-      if (!hasRequiredRole) {
-        return false;
-      }
+    // Role-based permissions: DENY BY DEFAULT.
+    // A command must explicitly opt into @everyone or name allowed roles.
+    // An empty/missing permissions array means "no one" (except owner, handled above).
+    if (!command.permissions || command.permissions.length === 0) {
+      return false;
     }
-    
-    return true;
+
+    // Everyone has permission
+    if (command.permissions.includes('@everyone')) {
+      return true;
+    }
+
+    // Check if user has any of the required roles
+    const memberRoles = member.roles.cache;
+    const hasRequiredRole = memberRoles.some(role => {
+      return command.permissions.includes(role.name) ||
+             command.permissions.includes(role.id);
+    });
+
+    return hasRequiredRole;
   }
   
   /**

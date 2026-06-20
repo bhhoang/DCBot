@@ -44,10 +44,19 @@ async function reloadModules(moduleName, bot) {
       // Register commands and events ONCE after all modules are loaded
       await bot.commandHandler.registerCommands();
       await bot.eventHandler.registerEvents();
-      
+
+      // Install deps for any newly-present module, then reclaim orphans from
+      // removed/disabled modules. Guarded: a dep failure must not abort reload.
+      try {
+        await bot.dependencyManager.checkDependencies();
+        await bot.dependencyManager.gcStore();
+      } catch (depError) {
+        console.error('Dependency sync during reload failed (non-fatal):', depError.message);
+      }
+
       return results;
     }
-    
+
     // Handle multiple modules separated by commas or spaces
     const moduleNames = moduleName.split(/[\s,]+/).filter(Boolean);
     
@@ -308,16 +317,10 @@ module.exports = {
     if (bot.commandHandler && !bot.commandHandler.unregisterAllCommands) {
       bot.commandHandler.unregisterAllCommands = async function() {
         console.log("Unregistering all commands before reload");
-        // Implementation depends on your command handler structure
-        // This is a placeholder - you need to implement based on your system
-        if (typeof this.commands === 'object') {
-          this.commands.clear();
-        }
-        
-        if (Array.isArray(this.commandsList)) {
-          this.commandsList = [];
-        }
-        
+        this.commands.clear();
+        this.slashCommands.clear();
+        this.legacyCommands.clear();
+        this.bot.client.commands?.clear();
         return true;
       };
     }
@@ -325,8 +328,15 @@ module.exports = {
     if (bot.commandHandler && !bot.commandHandler.unregisterModuleCommands) {
       bot.commandHandler.unregisterModuleCommands = async function(moduleName) {
         console.log(`Unregistering commands for module: ${moduleName}`);
-        // Implementation depends on your command handler structure
-        // This is a placeholder - you need to implement based on your system
+        for (const [name, cmd] of this.commands.entries()) {
+          if (cmd.module === moduleName) {
+            this.commands.delete(name);
+            this.slashCommands.delete(name);
+            this.legacyCommands.delete(name);
+            this.legacyCommands.delete(name.toLowerCase());
+            this.bot.client.commands?.delete(name);
+          }
+        }
         return true;
       };
     }
@@ -334,8 +344,11 @@ module.exports = {
     if (bot.eventHandler && !bot.eventHandler.unregisterAllEvents) {
       bot.eventHandler.unregisterAllEvents = async function() {
         console.log("Unregistering all events before reload");
-        // Implementation depends on your event handler structure
-        // This is a placeholder - you need to implement based on your system
+        // Remove every module's listeners via the real per-module unregister,
+        // so a full reload doesn't leave stale client.on() bindings behind.
+        for (const moduleName of Array.from(this.moduleEvents.keys())) {
+          this.unregisterModuleEvents(moduleName);
+        }
         return true;
       };
     }

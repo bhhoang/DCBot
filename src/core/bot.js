@@ -48,7 +48,7 @@ class Bot {
     this.client.cooldowns = new Collection();
     
     // Core component initialization
-    this.dependencyManager = new DependencyManager();
+    this.dependencyManager = new DependencyManager(this.config.modules);
     this.moduleLoader = new ModuleLoader(this);
     this.commandHandler = new CommandHandler(this);
     this.eventHandler = new EventHandler(this);
@@ -79,7 +79,10 @@ class Bot {
     
     // Load modules
     await this.moduleLoader.loadModules();
-    
+
+    // Reclaim deps orphaned by removed/disabled modules now that the module set is known.
+    await this.dependencyManager.gcStore();
+
     // Register commands from modules
     await this.commandHandler.registerCommands();
     
