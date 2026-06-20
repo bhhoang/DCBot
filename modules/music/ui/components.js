@@ -135,10 +135,15 @@ function searchRows(picker, pageIndex, totalPages) {
     .addOptions(
       tracks.map((t, i) => {
         const idx = pageIndex * 5 + i;
-        const label = t.title.length > 100 ? t.title.slice(0, 97) + '...' : t.title;
+        // Discord caps select-option labels at 100 chars. We prefix with
+        // "N. " (4 chars max), so cap the title at 95 to leave room.
+        const label = t.title.length > 95 ? t.title.slice(0, 92) + '...' : t.title;
+        // Description is also capped at 100. Build it first then truncate.
+        const desc = `${t.author || 'unknown'} — ${t.duration || '?'}`;
+        const description = desc.length > 100 ? desc.slice(0, 97) + '...' : desc;
         return new StringSelectMenuOptionBuilder()
           .setLabel(`${idx + 1}. ${label}`)
-          .setDescription(`${t.author || 'unknown'} — ${t.duration || '?'}`)
+          .setDescription(description)
           .setValue(String(idx));
       }),
     );
@@ -180,19 +185,6 @@ function searchRows(picker, pageIndex, totalPages) {
 
 function queueRows(tracks, pageIndex, totalPages, ownerId) {
   const pageTracks = tracks.slice(pageIndex * 10, pageIndex * 10 + 10);
-  const select = new StringSelectMenuBuilder()
-    .setCustomId(IDS.QUEUE_REMOVE + ownerId)
-    .setPlaceholder('Pick a track to remove')
-    .addOptions(
-      pageTracks.map((t, i) => {
-        const idx = pageIndex * 10 + i;
-        const label = t.title.length > 100 ? t.title.slice(0, 97) + '...' : t.title;
-        return new StringSelectMenuOptionBuilder()
-          .setLabel(`${idx + 1}. ${label}`)
-          .setDescription(`@${t.requestedBy?.username || 'unknown'}`)
-          .setValue(String(idx));
-      }),
-    );
 
   const navRow = new ActionRowBuilder();
   if (totalPages > 1) {
@@ -227,6 +219,34 @@ function queueRows(tracks, pageIndex, totalPages, ownerId) {
       .setEmoji('✖')
       .setStyle(ButtonStyle.Secondary),
   );
+
+  // Discord's StringSelectMenu requires 1-25 options. If this page has no
+  // tracks (e.g. the queue was emptied by another path), omit the select
+  // entirely and return just the nav row — the caller is expected to handle
+  // the empty-queue case via a separate text response.
+  if (pageTracks.length === 0) {
+    return [navRow];
+  }
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(IDS.QUEUE_REMOVE + ownerId)
+    .setPlaceholder('Pick a track to remove')
+    .addOptions(
+      pageTracks.map((t, i) => {
+        const idx = pageIndex * 10 + i;
+        // Discord caps select-option labels at 100 chars. We prefix with
+        // "NN. " (up to 5 chars for idx >= 100), so cap the title at 95
+        // to leave room for any single- or double-digit prefix.
+        const label = t.title.length > 95 ? t.title.slice(0, 92) + '...' : t.title;
+        // Description is also capped at 100. Build it first then truncate.
+        const desc = `@${t.requestedBy?.username || 'unknown'}`;
+        const description = desc.length > 100 ? desc.slice(0, 97) + '...' : desc;
+        return new StringSelectMenuOptionBuilder()
+          .setLabel(`${idx + 1}. ${label}`)
+          .setDescription(description)
+          .setValue(String(idx));
+      }),
+    );
 
   return [
     new ActionRowBuilder().addComponents(select),
