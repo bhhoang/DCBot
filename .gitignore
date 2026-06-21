@@ -170,3 +170,10 @@ modules/.views/
 # Ignore all markdown except README — local docs only
 *.md
 !README.md
+
+# Tooling state — Claude Code / OMC local caches, not project code
+.claude/
+.omc/
+
+# Runtime data written by modules at startup/operation
+data/logger-settings.json
