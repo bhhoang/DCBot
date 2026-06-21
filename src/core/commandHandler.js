@@ -1,7 +1,7 @@
 // src/core/commandHandler.js - Handles command registration and execution
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v9');
-const { Collection } = require('discord.js');
+const { Collection, MessageFlags } = require('discord.js');
 
 class CommandHandler {
   constructor(bot) {
@@ -113,20 +113,22 @@ class CommandHandler {
       const commandsData = Array.from(this.slashCommands.values())
         .filter(cmd => cmd.data)
         .map(cmd => cmd.data);
-      
+
       if (commandsData.length > 0) {
         console.log(`Registering ${commandsData.length} slash commands with Discord...`);
-        
-        // Register to test guild if in development mode
+
+        // Per-guild registration is instant (no cache delay) — preferred in dev.
         if (this.bot.config.development?.testGuildId) {
           await this.registerCommandsToGuild(this.bot.config.development.testGuildId, commandsData);
         } else {
-          // Register globally (takes up to an hour to propagate)
+          // Global registration: Discord caches the list, so new commands
+          // can take up to ~1h to appear in clients. Set testGuildId for
+          // instant dev updates, or use the /deploy admin command.
           await this.rest.put(
             Routes.applicationCommands(this.bot.config.bot.clientId),
             { body: commandsData }
           );
-          console.log('Global slash commands registered.');
+          console.log('Global slash commands registered (Discord cache delay: new commands may take up to ~1h to appear in clients).');
         }
       }
     } catch (error) {
@@ -196,7 +198,7 @@ class CommandHandler {
       const timeLeft = this.getCooldownTimeLeft(interaction.user.id, command);
       return interaction.reply({
         content: `Please wait ${timeLeft.toFixed(1)} more second(s) before using the /${command.name} command.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -204,7 +206,7 @@ class CommandHandler {
     if (!this.userHasPermission(interaction.member, command)) {
       return interaction.reply({
         content: `You don't have permission to use this command.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -219,7 +221,7 @@ class CommandHandler {
       
       const replyOptions = {
         content: 'There was an error executing this command.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       };
       
       if (interaction.deferred || interaction.replied) {

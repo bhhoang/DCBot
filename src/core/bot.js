@@ -100,7 +100,7 @@ class Bot {
    */
   setupCoreEvents() {
     // Ready event
-    this.client.on('ready', () => {
+    this.client.on('clientReady', () => {
       console.log(`Logged in as ${this.client.user.tag}!`);
       this.setStatus();
     });
