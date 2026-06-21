@@ -1,14 +1,25 @@
 // modules/music/player.js — thin facade over discord-player. The init() body
 // is the same as the current modules/music/index.js init() but split into
 // helpers so the rest of the module can call into the player.
-const { Player, QueryType, GuildQueueEvent } = require('discord-player');
+//
+// Registered providers (extractors):
+//   YouTube (YoutubeiExtractor, custom), Spotify (SpotifyExtractor, needs
+//   config.music.spotify.* for playback), and DefaultExtractors from
+//   @discord-player/extractor — SoundCloud, Apple Music, Vimeo, Reverbnation,
+//   Attachment (no credentials required).
+const { Player, QueryType, GuildQueueEvent, Track, Util } = require('discord-player');
 const { YoutubeiExtractor } = require('discord-player-youtubei');
-const { DefaultExtractors } = require('@discord-player/extractor');
+const { DefaultExtractors, SpotifyExtractor } = require('@discord-player/extractor');
+const { youtubeDl } = require('youtube-dl-exec');
 const { Log } = require('youtubei.js');
+const { providerLabel } = require('./providers');
+const soundcloudSearch = require('./soundcloudSearch');
+const spotifySearch = require('./spotifySearch');
 const state = require('./state');
 const { refreshNowPlaying } = require('./ui/embeds'); // created in Task 4
 
 let player = null;
+let botConfig = null;
 
 async function init(client, bot) {
   // youtubei.js logs non-fatal parser warnings (missing view types, signature
@@ -16,6 +27,7 @@ async function init(client, bot) {
   Log.setLevel(Log.Level.ERROR);
 
   player = new Player(client);
+  botConfig = bot?.config || null;
 
   // See modules/music (prior fix): useYoutubeDL routes audio streaming through
   // yt-dlp (youtubei.js cannot produce a playable URL without server PO token).
@@ -26,11 +38,35 @@ async function init(client, bot) {
   });
   if (!yt) console.warn('[music] YoutubeiExtractor failed to register — YouTube playback will be unavailable.');
 
+  const spotifyConfig = bot.config?.music?.spotify || {};
+  const spotifyOptions = {};
+  if (spotifyConfig.clientId && spotifyConfig.clientSecret) {
+    spotifyOptions.clientId = spotifyConfig.clientId;
+    spotifyOptions.clientSecret = spotifyConfig.clientSecret;
+  }
+  const spotify = await player.extractors.register(SpotifyExtractor, spotifyOptions);
+  if (spotifyConfig.clientId && spotifyConfig.clientSecret) {
+    console.log('[music] Spotify credentials present — search will use the custom Client Credentials flow.');
+  } else {
+    console.warn('[music] Spotify credentials not set in config.music.spotify — Spotify search will return 0. See docs/SPOTIFY-SETUP.md.');
+  }
+
   await player.extractors.loadMulti(DefaultExtractors);
   const failed = DefaultExtractors.filter((ext) => !player.extractors.isRegistered(ext.identifier));
   if (failed.length) {
     console.warn(`[music] ${failed.length} default extractor(s) failed to register:`,
       failed.map((e) => e.identifier).join(', '));
+  }
+
+  // Log every registered provider so operators can verify multi-provider
+  // support at boot without grepping logs or trial-and-error'ing queries.
+  const registered = player.extractors.store?.size ?? 0;
+  if (registered > 0) {
+    const names = [];
+    for (const ext of player.extractors.store.values()) {
+      names.push(providerLabel(ext.identifier));
+    }
+    console.log(`[music] providers loaded (${registered}): ${names.join(', ')}`);
   }
 
   // Subscribe to events — each handler resolves the GuildQueue to a GuildMusicState
@@ -94,9 +130,88 @@ function getQueue(guildId) {
   return player.nodes.get(guildId) || null;
 }
 
-async function search(query) {
+// Maps /play's provider choice + URL detection to a discord-player QueryType.
+// URLs use URL-specific types (YOUTUBE_VIDEO etc.) so a pasted Spotify link
+// with provider=spotify parses correctly; text uses the search type.
+function mapProviderToQueryType(provider, query) {
+  const isUrl = /^https?:\/\//i.test(query)
+    || /^(www\.)?(youtube\.com|youtu\.be|open\.spotify\.com|soundcloud\.com)/i.test(query);
+  const map = {
+    youtube:    isUrl ? QueryType.YOUTUBE_VIDEO     : QueryType.YOUTUBE_SEARCH,
+    spotify:    isUrl ? QueryType.SPOTIFY_SONG     : QueryType.SPOTIFY_SEARCH,
+    soundcloud: isUrl ? QueryType.SOUNDCLOUD_TRACK : QueryType.SOUNDCLOUD_SEARCH,
+  };
+  return map[provider] || QueryType.AUTO;
+}
+
+// discord-player needs the Track to carry an `extractor` reference for
+// stream resolution; reuse the registered one.
+function buildSoundCloudTrack(raw) {
+  const scExtractor = player?.extractors?.store?.get('com.discord-player.soundcloudextractor');
+  const track = new Track(player, {
+    title: raw.title,
+    url: raw.permalink_url,
+    duration: Util.buildTimeCode(Util.parseMS(raw.duration || 0)),
+    description: raw.description || '',
+    thumbnail: raw.artwork_url,
+    views: raw.playback_count,
+    author: raw.user?.username,
+    source: 'soundcloud',
+    engine: raw,
+    metadata: raw,
+    requestMetadata: async () => raw,
+    cleanTitle: raw.title,
+  });
+  if (scExtractor) track.extractor = scExtractor;
+  return track;
+}
+
+// Bypasses @discord-player/extractor's SoundCloudExtractor — it throws
+// "maxRedirections is not supported" on newer undici (the .catch(noop)
+// silently swallows it, returning 0 tracks). We hit the v2 API directly.
+async function customSoundCloudSearch(query) {
+  const raw = await soundcloudSearch.search(query, 25);
+  return raw.map(buildSoundCloudTrack);
+}
+
+// Spotify: bypasses extractor's broken OAuth request (415 on empty JSON
+// body) and its anonymous-token fallback (Cloudflare 403). Uses the
+// correct x-www-form-urlencoded Client Credentials flow via fetch.
+// Returns [] without credentials so play.js can show its error.
+function buildSpotifyTrack(raw) {
+  const spExtractor = player?.extractors?.store?.get('com.discord-player.spotifyextractor');
+  const track = new Track(player, {
+    title: raw.name,
+    url: raw.external_urls?.spotify || (raw.id ? `https://open.spotify.com/track/${raw.id}` : ''),
+    duration: Util.buildTimeCode(Util.parseMS(raw.duration_ms || 0)),
+    description: (raw.artists || []).map((a) => a.name).join(', '),
+    thumbnail: raw.album?.images?.[0]?.url || null,
+    views: 0,
+    author: (raw.artists || [])[0]?.name || 'Unknown Artist',
+    source: 'spotify',
+    engine: raw,
+    metadata: { source: raw, bridge: null },
+    requestMetadata: async () => ({ source: raw, bridge: null }),
+    cleanTitle: raw.name,
+  });
+  if (spExtractor) track.extractor = spExtractor;
+  return track;
+}
+
+async function customSpotifySearch(query) {
+  const cfg = botConfig?.music?.spotify || {};
+  const clientId = cfg.clientId || process.env.DP_SPOTIFY_CLIENT_ID;
+  const clientSecret = cfg.clientSecret || process.env.DP_SPOTIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+  const raw = await spotifySearch.search(query, clientId, clientSecret);
+  return raw.map(buildSpotifyTrack);
+}
+
+async function search(query, provider = 'auto') {
   if (!player) throw new Error('Player not initialized');
-  const result = await player.search(query, { searchEngine: QueryType.AUTO });
+  if (provider === 'soundcloud') return await customSoundCloudSearch(query);
+  if (provider === 'spotify') return await customSpotifySearch(query);
+  const result = await player.search(query, { searchEngine: mapProviderToQueryType(provider, query) });
   return result.tracks;
 }
 
@@ -215,12 +330,37 @@ async function onQueueUpdate(guildId) {
   await refreshNowPlaying(q, q.currentTrack, q.node.isPaused() ? 'paused' : 'playing');
 }
 
+// Provider helpers live in ./providers (extracted to break a cycle with ./ui/embeds).
+const { PROVIDER_META } = require('./providers');
+
+// List every extractor currently registered with the player. Returns an
+// empty array before init() or after shutdown().
+function listProviders() {
+  if (!player || !player.extractors?.store) return [];
+  const out = [];
+  for (const ext of player.extractors.store.values()) {
+    const short = String(ext.identifier || '').replace(/^com\.discord-player\./, '').toLowerCase().replace(/extractor?$/, '');
+    const meta = PROVIDER_META[short] || {};
+    out.push({
+      id: ext.identifier,
+      label: meta.label || short || String(ext.identifier),
+      needsCredentials: !!meta.needsCredentials,
+      note: meta.note || '',
+    });
+  }
+  return out;
+}
+
 module.exports = {
   init, shutdown,
   getQueue, search, addTrack,
   pause, resume, skip, stop, shuffle,
   setLoop, setVolume, getVolume, toggleMute,
   getNowPlaying, onQueueUpdate,
+  listProviders,
+  // Re-exported for callers that already depend on player.js.
+  providerLabel: require('./providers').providerLabel,
+  trackSourceLabel: require('./providers').trackSourceLabel,
   // Expose for tests / handlers that need direct access.
   _player: () => player,
 };
