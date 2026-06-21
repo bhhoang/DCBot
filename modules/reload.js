@@ -1,5 +1,5 @@
 // modules/reload.js
-const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -303,7 +303,7 @@ module.exports = {
   meta: {
     name: "reload",
     type: "admin",
-    version: "1.1.0", // Updated version
+    version: "1.2.0", // Added /deploy admin command for instant per-guild command registration
     description: "Reload commands without restarting the bot",
     dependencies: [], // No dependencies on other modules
     npmDependencies: {} // No npm dependencies
@@ -382,7 +382,7 @@ module.exports = {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({
             content: "You need Administrator permissions to use this command.",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         
@@ -473,6 +473,51 @@ module.exports = {
         }
         
         return loadingMsg.edit({ content: null, embeds: [embed] });
+      }
+    },
+    {
+      name: 'deploy',
+      description: 'Re-register slash commands to this guild (instant update)',
+      data: {
+        name: 'deploy',
+        description: 'Re-register slash commands to this guild (instant update)',
+        options: []
+      },
+      slash: true,
+      cooldown: 10,
+      async execute(interaction, bot) {
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({
+            content: 'You need Administrator permissions to use this command.',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        try {
+          await bot.commandHandler.registerCommandsToGuild(interaction.guildId);
+          const count = bot.commandHandler.slashCommands.size;
+          return interaction.editReply({
+            content: `✅ Registered ${count} slash commands to this guild. New commands should appear immediately.`
+          });
+        } catch (error) {
+          console.error('[deploy] error:', error);
+          return interaction.editReply({ content: `❌ Deploy failed: ${error.message}` });
+        }
+      },
+      legacy: true,
+      async legacyExecute(message, bot) {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return message.reply('You need Administrator permissions to use this command.');
+        }
+        const status = await message.reply('🔄 Deploying commands...');
+        try {
+          await bot.commandHandler.registerCommandsToGuild(message.guild.id);
+          const count = bot.commandHandler.slashCommands.size;
+          return status.edit(`✅ Registered ${count} slash commands to this guild.`);
+        } catch (error) {
+          console.error('[deploy] error:', error);
+          return status.edit(`❌ Deploy failed: ${error.message}`);
+        }
       }
     }
   ]
