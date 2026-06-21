@@ -2,6 +2,7 @@
 // helper that player events call. No side effects except the edit in
 // refreshNowPlaying itself.
 const { EmbedBuilder, Colors } = require('discord.js');
+const { trackSourceLabel, providerDisplayName } = require('../providers');
 const state = require('../state');
 const { nowPlayingRows, emptyNowPlayingRows, disconnectedNowPlayingRows } = require('./components');
 const { musicEmojiStr } = require('./icons');
@@ -60,15 +61,16 @@ function formatTrackDuration(track) {
   return formatDuration(track.duration);
 }
 
-function nowPlayingEmbed(track, requestedBy, loopMode, volume) {
+function nowPlayingEmbed(track, requestedBy, loopMode, volume, isPaused = false) {
   const embed = new EmbedBuilder()
-    .setTitle(`${musicEmojiStr('play', '🎵')} Now Playing`)
+    .setTitle(`${musicEmojiStr(isPaused ? 'pause' : 'play', isPaused ? '⏸' : '🎵')} Now Playing`)
     .setDescription(`**${track.title}**`)
-    .setColor(Colors.Green)
+    .setColor(isPaused ? Colors.Yellow : Colors.Green)
     .addFields(
+      { name: 'Source', value: trackSourceLabel(track), inline: true },
       { name: 'Duration', value: formatTrackDuration(track), inline: true },
-      { name: 'Requested by', value: requestedBy || 'unknown', inline: true },
       { name: 'Volume', value: `${volume ?? 100}%`, inline: true },
+      { name: 'Requested by', value: requestedBy || 'unknown', inline: true },
     );
   if (track.thumbnail) embed.setThumbnail(track.thumbnail);
   return embed;
@@ -88,13 +90,15 @@ function disconnectedNowPlayingEmbed() {
     .setColor(Colors.Red);
 }
 
-function searchEmbed(query, pageIndex, totalPages, tracks) {
+function searchEmbed(query, pageIndex, totalPages, tracks, provider) {
   const lines = tracks.map((t, i) => {
     const idx = pageIndex * 5 + i + 1;
-    return `${idx}. **${t.title}** — ${t.author || 'unknown'} — ${formatTrackDuration(t)}`;
+    const source = trackSourceLabel(t);
+    return `${idx}. **${t.title}** — ${t.author || 'unknown'} — ${formatTrackDuration(t)} • ${source}`;
   }).join('\n');
+  const titleSuffix = provider && provider !== 'auto' ? ` (${providerDisplayName(provider)})` : '';
   return new EmbedBuilder()
-    .setTitle('🔍 Search results')
+    .setTitle(`🔍 Search results${titleSuffix}`)
     .setDescription(`Query: "${query}"\nPage ${pageIndex + 1} of ${totalPages}\n\n${lines}`)
     .setColor(Colors.Blue);
 }
@@ -155,8 +159,9 @@ async function refreshNowPlaying(queue, track, mode) {
   } else {
     // 'playing' or 'paused'
     const requestedBy = track?.requestedBy?.username || 'unknown';
-    embed = nowPlayingEmbed(track, requestedBy, s.loopMode, s.volume);
-    rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ false, /*isPaused=*/ mode === 'paused', /*isMuted=*/ isMuted);
+    const isPaused = mode === 'paused';
+    embed = nowPlayingEmbed(track, requestedBy, s.loopMode, s.volume, isPaused);
+    rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ false, /*isPaused=*/ isPaused, /*isMuted=*/ isMuted);
   }
   await message.edit({ embeds: [embed], components: rows }).catch((err) => {
     // Log the failure so we can diagnose silent UI-update bugs. The channel-fetch

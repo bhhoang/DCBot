@@ -49,7 +49,7 @@ function renderNowPlaying(guildId) {
   const isPaused = q.node.isPaused();
   const isMuted = s.preMuteVolume !== null;
   const track = q.currentTrack;
-  const embeds = [nowPlayingEmbed(track, track?.requestedBy?.username, s.loopMode, s.volume)];
+  const embeds = [nowPlayingEmbed(track, track?.requestedBy?.username, s.loopMode, s.volume, isPaused)];
   const { nowPlayingRows } = require('../ui/components');
   const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, isMuted);
   return { embeds, components };
@@ -177,7 +177,7 @@ async function handle(interaction, bot) {
       const { searchRows } = require('../ui/components');
       const totalPages = Math.ceil(picker.tracks.length / 5);
       await interaction.update({
-        embeds: [searchEmbed(picker.query, picker.pageIndex, totalPages, picker.tracks)],
+        embeds: [searchEmbed(picker.query, picker.pageIndex, totalPages, picker.tracks, picker.provider)],
         components: searchRows(picker, picker.pageIndex, totalPages),
       });
       return;
@@ -193,7 +193,7 @@ async function handle(interaction, bot) {
       const { searchEmbed } = require('../ui/embeds');
       const { searchRows } = require('../ui/components');
       await interaction.update({
-        embeds: [searchEmbed(picker.query, picker.pageIndex, totalPages, picker.tracks)],
+        embeds: [searchEmbed(picker.query, picker.pageIndex, totalPages, picker.tracks, picker.provider)],
         components: searchRows(picker, picker.pageIndex, totalPages),
       });
       return;
