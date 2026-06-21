@@ -6,7 +6,7 @@ const { searchEmbed } = require('../ui/embeds');
 const { searchRows } = require('../ui/components');
 const { musicEmojiStr } = require('../ui/icons');
 
-async function runSearch(source, query, isLegacy) {
+async function runSearch(source, query, isLegacy, provider = 'auto') {
   // Voice channel check
   const member = isLegacy ? source.member : source.member;
   const voiceChannel = member?.voice?.channel;
@@ -33,7 +33,7 @@ async function runSearch(source, query, isLegacy) {
 
   let tracks;
   try {
-    tracks = await player.search(query);
+    tracks = await player.search(query, provider);
   } catch (error) {
     console.error('[music] search error:', error.message);
     const content = `${musicEmojiStr('cancel', '✕')} Couldn't search: ${query}`;
@@ -42,7 +42,14 @@ async function runSearch(source, query, isLegacy) {
   }
 
   if (!tracks || tracks.length === 0) {
-    const content = `${musicEmojiStr('cancel', '✕')} No results for: ${query}`;
+    let content = `${musicEmojiStr('cancel', '✕')} No results for: ${query}`;
+    if (provider === 'spotify') {
+      // Spotify's anonymous token endpoint is blocked by Cloudflare; search
+      // returns 0 unless config.music.spotify.clientId/clientSecret are set.
+      content = `${musicEmojiStr('cancel', '✕')} No Spotify results for: ${query}\n` +
+        'Spotify search needs `config.music.spotify.clientId` and `clientSecret`. ' +
+        'Get them at https://developer.spotify.com/dashboard and add them to config/config.json.';
+    }
     if (isLegacy) return statusMsg.edit(content);
     return source.editReply({ content });
   }
@@ -57,11 +64,12 @@ async function runSearch(source, query, isLegacy) {
     channelId: source.channel.id,
     messageId: null, // filled below
     query,
+    provider, // user-selected provider; 'auto' = no filter
     tracks: trimmed,
     pageIndex: 0,
   };
 
-  const embed = searchEmbed(query, 0, totalPages, trimmed);
+  const embed = searchEmbed(query, 0, totalPages, trimmed, provider);
   const rows = searchRows(picker, 0, totalPages);
   let sent;
   if (isLegacy) {
@@ -76,12 +84,24 @@ async function runSearch(source, query, isLegacy) {
 module.exports = {
   getCommand: () => ({
     name: 'play',
-    description: 'Play a song from YouTube (shows a picker)',
+    description: 'Play a song from YouTube, Spotify, or SoundCloud (shows a picker)',
     data: {
       name: 'play',
-      description: 'Play a song from YouTube (shows a picker)',
+      description: 'Play a song from YouTube, Spotify, or SoundCloud (shows a picker)',
       options: [
-        { name: 'query', description: 'Song title or URL', type: 3, required: true },
+        { name: 'query', description: 'Song title, or URL from YouTube/Spotify/SoundCloud', type: 3, required: true },
+        {
+          name: 'provider',
+          description: 'Which provider to search (default: auto)',
+          type: 3,
+          required: false,
+          choices: [
+            { name: 'Auto (all providers)', value: 'auto' },
+            { name: 'YouTube', value: 'youtube' },
+            { name: 'Spotify', value: 'spotify' },
+            { name: 'SoundCloud', value: 'soundcloud' },
+          ],
+        },
       ],
     },
     slash: true,
@@ -89,13 +109,14 @@ module.exports = {
     permissions: ['@everyone'],
     async execute(interaction, bot) {
       const query = interaction.options.getString('query');
-      return runSearch(interaction, query, false);
+      const provider = interaction.options.getString('provider') || 'auto';
+      return runSearch(interaction, query, false, provider);
     },
     legacy: true,
     async legacyExecute(message, args, bot) {
       const query = args.join(' ');
       if (!query) return message.reply(`${musicEmojiStr('cancel', '✕')} Provide a song name or URL.`);
-      return runSearch(message, query, true);
+      return runSearch(message, query, true, 'auto');
     },
   }),
 };

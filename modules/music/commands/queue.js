@@ -102,8 +102,9 @@ function nowPlayingCommand() {
       if (!q) return interaction.reply({ content: `${musicEmojiStr('cancel', '✕')} Nothing is playing right now.`, flags: MessageFlags.Ephemeral });
       const track = q.currentTrack;
       const s = state.getOrCreate(guildId);
-      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)];
-      const components = nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused(), s.preMuteVolume !== null);
+      const isPaused = q.node.isPaused();
+      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused)];
+      const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, s.preMuteVolume !== null);
       const channel = interaction.channel;
       // Try to edit the existing persistent message first; only post a new one
       // if there is no ref or the previous message was deleted.
@@ -128,8 +129,9 @@ function nowPlayingCommand() {
       if (!q) return message.reply(`${musicEmojiStr('cancel', '✕')} Nothing is playing right now.`);
       const track = q.currentTrack;
       const s = state.getOrCreate(guildId);
-      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume)];
-      const components = nowPlayingRows(s.loopMode, s.volume, false, q.node.isPaused(), s.preMuteVolume !== null);
+      const isPaused = q.node.isPaused();
+      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused)];
+      const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, s.preMuteVolume !== null);
       const channel = message.channel;
       if (s.nowPlayingMessage) {
         try {
