@@ -1,5 +1,5 @@
 // modules/logger.js - Updated with improved error handling
-const { EmbedBuilder, AuditLogEvent } = require('discord.js');
+const { EmbedBuilder, AuditLogEvent, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -463,7 +463,7 @@ module.exports = {
         if (!interaction.member.permissions.has('Administrator')) {
           return interaction.reply({
             content: "You need Administrator permission to use this command!",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         
@@ -471,7 +471,7 @@ module.exports = {
         if (!channel) {
           return interaction.reply({
             content: "Invalid channel selection.",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         
@@ -479,7 +479,7 @@ module.exports = {
         if (!channel.isTextBased()) {
           return interaction.reply({
             content: "The log channel must be a text channel!",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         
@@ -488,7 +488,7 @@ module.exports = {
         if (!loggerModule) {
           return interaction.reply({
             content: "Logger module is not loaded!",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         

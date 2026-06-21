@@ -1,5 +1,5 @@
 // modules/gemini.js
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 
 // Conversation memory for users (ephemeral, cleared on bot restart)
 const userConversations = new Map();
@@ -101,7 +101,7 @@ module.exports = {
             if (!this.apiKey) {
               return interaction.reply({
                 content: "⚠️ Gemini API key not configured. Please ask the bot administrator to set up the Gemini API key.",
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
               });
             }
 
@@ -153,7 +153,7 @@ module.exports = {
           } else {
             await interaction.reply({
               content: '❌ Something went wrong with the Gemini API.',
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
         }
@@ -312,12 +312,12 @@ module.exports = {
           userConversations.delete(userId);
           return interaction.reply({
             content: "✅ Your Gemini conversation history has been cleared.",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         } else {
           return interaction.reply({
             content: "You don't have any active Gemini conversations.",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       },

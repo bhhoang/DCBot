@@ -1,5 +1,5 @@
 // modules/clear.js
-const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 
 module.exports = {
   meta: {
@@ -57,7 +57,7 @@ module.exports = {
             !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
           return interaction.reply({
             content: "You need Administrator or Manage Messages permissions to use this command.",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         
@@ -69,7 +69,7 @@ module.exports = {
         if (!interaction.channel.isTextBased()) {
           return interaction.reply({
             content: "This command can only be used in text channels.",
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
         
@@ -78,17 +78,17 @@ module.exports = {
           if (amount < 1 || amount > 100) {
             return interaction.reply({
               content: "Please provide a number between 1 and 100.",
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
           
           try {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const deletedMessages = await interaction.channel.bulkDelete(amount, true);
             
             await interaction.editReply({
               content: `Successfully deleted ${deletedMessages.size} messages.`,
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
             
             // Log the action
@@ -98,7 +98,7 @@ module.exports = {
             console.error("Error deleting messages:", error);
             await interaction.editReply({
               content: "Error deleting messages. Please try again later.",
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
           
@@ -120,7 +120,7 @@ module.exports = {
           
           await interaction.reply({
             embeds: [confirmEmbed],
-            ephemeral: true,
+            flags: MessageFlags.Ephemeral,
             components: [
               {
                 type: 1, // Action Row
@@ -186,7 +186,7 @@ module.exports = {
           }
         } else {
           // Skip confirmation and proceed directly
-          await interaction.deferReply({ ephemeral: true });
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
           await this.clearAllMessages(interaction, reason, bot);
         }
       },
@@ -235,12 +235,12 @@ module.exports = {
           if (interaction.replied || interaction.deferred) {
             await interaction.editReply({
               content: "Something went wrong while clearing the channel.",
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           } else {
             await interaction.reply({
               content: "Something went wrong while clearing the channel.",
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
         }

@@ -1,5 +1,5 @@
 // modules/help.js
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 
 module.exports = {
   meta: {
@@ -158,7 +158,7 @@ module.exports = {
           
           if (source.reply) {
             // Slash command
-            await source.reply({ content: reply, ephemeral: true });
+            await source.reply({ content: reply, flags: MessageFlags.Ephemeral });
           } else {
             // Legacy command
             await source.reply(reply);

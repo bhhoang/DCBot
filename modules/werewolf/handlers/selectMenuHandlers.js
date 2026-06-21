@@ -10,7 +10,7 @@ async function handleNightActionSelect(interaction, activeGames) {
     // FIXED: Immediately defer the reply before ANY processing
     // This is critical to prevent Discord's 3-second interaction timeout
     try {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     } catch (error) {
       console.error("Error deferring interaction (may already be deferred):", error);
       // Continue - we'll try to handle the interaction anyway
@@ -136,7 +136,7 @@ async function handleNightActionSelect(interaction, activeGames) {
       try {
         await interaction.reply({
           content: "Có lỗi xảy ra khi thực hiện hành động đêm.",
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       } catch (e) {
         console.error("Failed to respond to interaction after error:", e);
