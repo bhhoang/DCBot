@@ -6,7 +6,7 @@ class DependencyManager {
   // modulesConfig: bot.config.modules (carries the `disabled` array). Optional so
   // existing arg-less construction in tests/tools still works.
   constructor(modulesConfig = {}) {
-    this.modulesPath = path.join(__dirname, '../../modules');
+    this.modulesPath = path.resolve(__dirname, '../../modules');
     this.store = new Store(this.modulesPath, modulesConfig);
   }
 

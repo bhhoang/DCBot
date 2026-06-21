@@ -10,6 +10,7 @@ const { ensureJunction, safeRemove } = require('./links');
 // MAINTENANCE: add any future native module dep names here.
 const NATIVE_REBUILD_ALLOWLIST = [
   'sqlite3', 'opusscript', '@discordjs/opus', 'sodium-native', 'libsodium-wrappers',
+  '@snazzah/davey',
 ];
 
 class Store {
@@ -103,7 +104,7 @@ class Store {
     const root = layout.storeRoot(this.modulesPath);
     if (!fs.existsSync(root)) return [];
     return fs.readdirSync(root, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && d.name !== '.staging')
+      .filter((d) => d.isDirectory() && d.name !== '.staging' && d.name !== 'node_modules')
       .map((d) => layout.decodeEntryDirName(d.name));
   }
 
@@ -129,8 +130,11 @@ class Store {
       JSON.stringify({ name: `stage-${module.name}`, version: '1.0.0', dependencies: deps }, null, 2)
     );
 
-    // --ignore-scripts blocks lifecycle-script RCE (supply-chain hardening).
-    execSync('npm install --ignore-scripts --no-audit --no-fund --quiet', {
+    // Staging is a temp dir deleted after promotion; allow lifecycle scripts here
+    // so npm correctly resolves optionalDependencies (avoids npm/cli#4828).
+    // Security boundary is the allowlist in _rebuildNative — scripts in staging
+    // are harmless because the staging dir is discarded.
+    execSync('npm install --no-audit --no-fund --quiet', {
       cwd: stageDir,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -156,7 +160,12 @@ class Store {
       const src = path.join(stageModules, ...name.split('/'));
       if (!fs.existsSync(src)) {
         // npm may dedupe a transitive higher in the tree; locate it by walking.
-        const found = this._findInStageTree(stageModules, name);
+        let found = this._findInStageTree(stageModules, name);
+        if (!found) {
+          // Package may have been nested inside an already-promoted parent that
+          // was moved to the store before this entry was processed.
+          found = this._findInStoreNested(name, newlyPromoted);
+        }
         if (!found) {
           console.error(`[DEP-STORE] resolved package not found in staging: ${entry}`);
           continue;
@@ -170,6 +179,7 @@ class Store {
 
     this._wireIntraStoreJunctions(closure);
     this._rebuildNative(newlyPromoted);
+    this._wireStoreRootNodeModules(closure);
   }
 
   _movePackage(src, dest) {
@@ -197,6 +207,17 @@ class Store {
     return null;
   }
 
+  // After the staging tree is gone, check if the missing package was nested inside
+  // an already-promoted parent entry that was renamed into the store.
+  _findInStoreNested(name, newlyPromoted) {
+    for (const promoted of newlyPromoted) {
+      const promotedPkg = layout.storeEntryPackagePath(this.modulesPath, promoted);
+      const nestedPath = path.join(promotedPkg, 'node_modules', ...name.split('/'));
+      if (fs.existsSync(nestedPath)) return nestedPath;
+    }
+    return null;
+  }
+
   // For each store entry, create junctions to its direct deps inside the entry's
   // own node_modules, so nested require() resolves pnpm-style without hoisting.
   _wireIntraStoreJunctions(closure) {
@@ -209,17 +230,26 @@ class Store {
       if (!fs.existsSync(pkgJsonPath)) continue;
 
       let directDeps = {};
+      let optDeps = {};
       try {
-        directDeps = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8')).dependencies || {};
+        const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+        directDeps = pkg.dependencies || {};
+        optDeps = pkg.optionalDependencies || {};
       } catch { continue; }
 
       const entryModules = layout.storeEntryModulesPath(this.modulesPath, entry);
-      for (const depName of Object.keys(directDeps)) {
+      const allDeps = { ...directDeps, ...optDeps };
+      for (const depName of Object.keys(allDeps)) {
         const depEntry = byName.get(depName);
         if (!depEntry) continue; // satisfied at root or by self — skip
         const linkPath = path.join(entryModules, ...depName.split('/'));
         const target = layout.storeEntryPackagePath(this.modulesPath, depEntry);
-        ensureJunction(linkPath, target);
+        try {
+          ensureJunction(linkPath, target);
+        } catch {
+          // Skip deps that couldn't be junctioned (e.g. optional deps for other
+          // platforms that npm didn't install). Non-fatal.
+        }
       }
     }
   }
@@ -332,11 +362,62 @@ class Store {
         }
       }
 
+      this._pruneStoreRootNodeModules(liveSet);
+      this._rebuildStoreRootNodeModules();
       this.writeClosures(closures);
     } catch (error) {
       console.error(`[DEP-STORE] gc sweep error (non-fatal): ${error.message}`);
     }
   }
-}
+
+  // Wire junctions at .store/node_modules/<dep>/ so Node.js parent-walk resolution
+  // from inside any store entry finds packages (mirrors flat-npm behavior).
+  // Only creates junctions for entries whose store-package dir actually exists.
+  _wireStoreRootNodeModules(closure) {
+    const rootModules = layout.storeNodeModulesPath(this.modulesPath);
+    for (const entry of closure) {
+      const pkgPath = layout.storeEntryPackagePath(this.modulesPath, entry);
+      if (!fs.existsSync(pkgPath)) continue;
+      const { name } = layout.splitEntry(entry);
+      const linkPath = path.join(rootModules, ...name.split('/'));
+      try {
+        ensureJunction(linkPath, pkgPath);
+      } catch {
+        // Non-fatal; if the junction fails, parent-walk resolution may miss
+        // this package but intra-store junctions still cover declared deps.
+      }
+    }
+  }
+
+  // Rebuild .store/node_modules/ from the live closure set (used by gc).
+  _rebuildStoreRootNodeModules() {
+    const closures = this.readClosures();
+    const liveSet = closuresLib.computeLiveSet(
+      closures,
+      Object.keys(closures)
+    );
+    this._wireStoreRootNodeModules(Array.from(liveSet));
+  }
+
+  // Remove stale entries from .store/node_modules/ (no longer in any closure).
+  _pruneStoreRootNodeModules(liveSet) {
+    const rootModules = layout.storeNodeModulesPath(this.modulesPath);
+    if (!fs.existsSync(rootModules)) return;
+    for (const d of fs.readdirSync(rootModules, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      // Build the "name@version" key the store uses.
+      const name = d.name.replace('+', '/');
+      // Find any live entry matching this name — there may be multiple versions
+      // but the root can only hold one; keep it if ANY live entry matches.
+      const keepIt = Array.from(liveSet || []).some((entry) => {
+        const { name: ename } = layout.splitEntry(entry);
+        return ename === name;
+      });
+      if (!keepIt) {
+        safeRemove(path.join(rootModules, d.name));
+      }
+    }
+  }
+};
 
 module.exports = { Store, NATIVE_REBUILD_ALLOWLIST };

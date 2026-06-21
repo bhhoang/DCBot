@@ -48,6 +48,10 @@ function viewModulesPath(modulesPath, moduleName) {
   return path.join(modulesPath, '.views', moduleName, 'node_modules');
 }
 
+function storeNodeModulesPath(modulesPath) {
+  return path.join(storeRoot(modulesPath), 'node_modules');
+}
+
 module.exports = {
   splitEntry,
   entryDirName,
@@ -58,4 +62,5 @@ module.exports = {
   stagingPath,
   closuresFile,
   viewModulesPath,
+  storeNodeModulesPath,
 };
