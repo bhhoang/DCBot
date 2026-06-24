@@ -29,7 +29,7 @@ module.exports = {
   modelName: null, // Set to whichever model last succeeded (for the footer)
 
   // Module initialization
-  async init(client, bot) {
+  async init(client, bot, moduleRequire) {
     console.log("Gemini module initializing...");
 
     // Get API key from environment or config
@@ -42,8 +42,10 @@ module.exports = {
     }
 
     try {
-      // Import the Google GenAI package
-      const { GoogleGenAI } = require('@google/genai');
+      // Use the injected moduleRequire: this is a single-file module, so its deps
+      // live in .views/gemini/node_modules, which native require() can't find.
+      const req = moduleRequire || require;
+      const { GoogleGenAI } = req('@google/genai');
 
       // Initialize the Gemini API client
       this.ai = new GoogleGenAI({ apiKey: this.apiKey });

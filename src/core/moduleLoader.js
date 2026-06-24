@@ -125,7 +125,10 @@ class ModuleLoader {
 
     // Initialize the module
     if (typeof module.init === 'function') {
-      await module.init(this.bot.client, this.bot);
+      // Pass moduleRequire as a third arg so modules (esp. single-file ones,
+      // whose deps live in .views/<name>/node_modules — a path native require()
+      // never searches) can resolve their declared npmDependencies.
+      await module.init(this.bot.client, this.bot, moduleRequire);
     }
 
     // Store the module

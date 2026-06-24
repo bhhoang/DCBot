@@ -1,0 +1,11 @@
+{
+  "name": "discord-bot-module-werewolf",
+  "version": "2.1.0",
+  "description": "Trò chơi Ma Sói trong Discord",
+  "main": "index.js",
+  "dependencies": {
+    "@discordjs/voice": "^0.19.2",
+    "google-tts-api": "^2.0.2",
+    "@google/genai": "2.8.0"
+  }
+}

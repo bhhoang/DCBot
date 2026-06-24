@@ -156,24 +156,28 @@ class Store {
       const dest = layout.storeEntryPackagePath(this.modulesPath, entry);
       if (fs.existsSync(dest)) continue; // already in store — dedup
 
-      const { name } = layout.splitEntry(entry);
-      const src = path.join(stageModules, ...name.split('/'));
-      if (!fs.existsSync(src)) {
-        // npm may dedupe a transitive higher in the tree; locate it by walking.
-        let found = this._findInStageTree(stageModules, name);
-        if (!found) {
+      const { name, version } = layout.splitEntry(entry);
+      // Match BOTH name and version: a closure can contain multiple versions of
+      // the same package (e.g. whatwg-url@5.0.0 + @14.2.0). Matching by name
+      // alone grabs whichever copy npm hoisted and drops it into the wrong slot,
+      // swapping the two versions' contents.
+      const direct = path.join(stageModules, ...name.split('/'));
+      let src = this._versionMatches(direct, version) ? direct : null;
+      if (!src) {
+        // npm may dedupe a transitive higher/deeper in the tree; locate the copy
+        // whose package.json version matches this entry.
+        src = this._findInStageTree(stageModules, name, version);
+        if (!src) {
           // Package may have been nested inside an already-promoted parent that
           // was moved to the store before this entry was processed.
-          found = this._findInStoreNested(name, newlyPromoted);
+          src = this._findInStoreNested(name, version, newlyPromoted);
         }
-        if (!found) {
+        if (!src) {
           console.error(`[DEP-STORE] resolved package not found in staging: ${entry}`);
           continue;
         }
-        this._movePackage(found, dest);
-      } else {
-        this._movePackage(src, dest);
       }
+      this._movePackage(src, dest);
       newlyPromoted.push(entry);
     }
 
@@ -187,11 +191,24 @@ class Store {
     fs.renameSync(src, dest); // same volume (modules/.store) — atomic move
   }
 
-  // Find a package dir by name anywhere in a staging node_modules tree (handles
-  // nested node_modules from npm's occasional non-hoisted placement).
-  _findInStageTree(stageModules, name) {
+  // True if the package dir's package.json reports exactly `version`. Missing
+  // dir or unreadable/mismatched version => false. Used to disambiguate when a
+  // closure carries multiple versions of the same package name.
+  _versionMatches(pkgDir, version) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
+      return pkg.version === version;
+    } catch {
+      return false;
+    }
+  }
+
+  // Find a package dir by name AND version anywhere in a staging node_modules
+  // tree (handles nested node_modules from npm's occasional non-hoisted
+  // placement, and multiple versions of the same name).
+  _findInStageTree(stageModules, name, version) {
     const direct = path.join(stageModules, ...name.split('/'));
-    if (fs.existsSync(direct)) return direct;
+    if (this._versionMatches(direct, version)) return direct;
     const stack = [stageModules];
     while (stack.length) {
       const dir = stack.pop();
@@ -200,20 +217,21 @@ class Store {
         if (!d.isDirectory()) continue;
         const nested = path.join(dir, d.name, 'node_modules');
         const candidate = path.join(nested, ...name.split('/'));
-        if (fs.existsSync(candidate)) return candidate;
+        if (this._versionMatches(candidate, version)) return candidate;
         if (fs.existsSync(nested)) stack.push(nested);
       }
     }
     return null;
   }
 
-  // After the staging tree is gone, check if the missing package was nested inside
-  // an already-promoted parent entry that was renamed into the store.
-  _findInStoreNested(name, newlyPromoted) {
+  // After the staging tree is gone, check if the missing package was nested
+  // inside an already-promoted parent entry that was renamed into the store.
+  // Version-aware to avoid grabbing a different version of the same name.
+  _findInStoreNested(name, version, newlyPromoted) {
     for (const promoted of newlyPromoted) {
       const promotedPkg = layout.storeEntryPackagePath(this.modulesPath, promoted);
       const nestedPath = path.join(promotedPkg, 'node_modules', ...name.split('/'));
-      if (fs.existsSync(nestedPath)) return nestedPath;
+      if (this._versionMatches(nestedPath, version)) return nestedPath;
     }
     return null;
   }
