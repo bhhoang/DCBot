@@ -86,11 +86,18 @@ const FREE_PROXY_SOURCES = [
 
 function httpGet(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    const req = https.get(url, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+        return;
+      }
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => resolve(data));
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(10000, () => req.destroy(new Error(`timeout fetching ${url}`)));
   });
 }
 
@@ -122,6 +129,7 @@ async function validateProxy(proxyUrl, testUrl, cookiesFile, maxSecs = 12) {
       noWarnings: true,
       noPlaylist: true,
       socketTimeout: 15,
+      timeout: maxSecs * 1000,
       ...(cookiesFile ? { cookies: cookiesFile } : {}),
     });
     const result = await cp;
@@ -139,10 +147,13 @@ let refreshTimer = null;
 async function buildPool(cfg, scraper, validator) {
   if (!cfg.freePool?.enabled) return [];
   const want = cfg.freePool.validateCount ?? 5;
+  const maxAttempts = want * 20;
   const candidates = await scraper();
   const live = [];
+  let attempts = 0;
   for (const url of candidates) {
-    if (live.length >= want) break;
+    if (live.length >= want || attempts >= maxAttempts) break;
+    attempts++;
     const ok = await validator(url, cfg.freePool.testUrl, cfg.cookiesFile);
     if (ok) live.push({ url, validatedAt: Date.now() });
   }
@@ -159,6 +170,7 @@ async function _initCommon(cfg, scraper, validator) {
 // Production init: kicks the first pool build in the BACKGROUND (never blocks
 // boot or playback). Schedules periodic refresh.
 function init(cfg) {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
   singleton = create({ config: cfg });
   if (cfg.enabled && cfg.freePool?.enabled) {
     const refresh = async () => {
