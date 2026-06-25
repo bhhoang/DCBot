@@ -164,6 +164,9 @@ dist
 config/config.json
 config/youtube-cookies.txt
 
+# bgutil yt-dlp PO-token plugin (downloaded artifact, not source)
+config/yt-dlp-plugins/
+
 # Module dependency store (regenerated at boot)
 modules/.store/
 modules/.views/
