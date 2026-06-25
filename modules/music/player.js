@@ -12,6 +12,8 @@ const { YoutubeiExtractor } = require('discord-player-youtubei');
 const { DefaultExtractors, SpotifyExtractor } = require('@discord-player/extractor');
 const { youtubeDl } = require('youtube-dl-exec');
 const { Log } = require('youtubei.js');
+const fs = require('fs');
+const path = require('path');
 const { providerLabel } = require('./providers');
 const soundcloudSearch = require('./soundcloudSearch');
 const spotifySearch = require('./spotifySearch');
@@ -29,13 +31,33 @@ async function init(client, bot) {
   player = new Player(client);
   botConfig = bot?.config || null;
 
-  // See modules/music (prior fix): useYoutubeDL routes audio streaming through
-  // yt-dlp (youtubei.js cannot produce a playable URL without server PO token).
-  // generateWithPoToken keeps search and metadata current via BotGuard.
-  const yt = await player.extractors.register(YoutubeiExtractor, {
+  // YouTube increasingly blocks datacenter/VPS IPs with "Sign in to confirm
+  // you're not a bot". Passing cookies from a logged-in account defeats this.
+  // Cookie file path resolves from config.music.youtube.cookiesFile, else the
+  // default below. Netscape cookies.txt format (yt-dlp --cookies).
+  const cookiesFile = bot.config?.music?.youtube?.cookiesFile
+    || path.join(__dirname, '..', '..', 'config', 'youtube-cookies.txt');
+  const hasCookies = fs.existsSync(cookiesFile);
+  if (hasCookies) {
+    console.log(`[music] using YouTube cookies from ${cookiesFile}`);
+  } else {
+    console.warn(`[music] no YouTube cookies file at ${cookiesFile} — playback may fail with bot-detection. See docs.`);
+  }
+
+  // useYoutubeDL routes audio streaming through yt-dlp (youtubei.js cannot
+  // produce a playable URL without a server PO token). The extractor's yt-dlp
+  // path reads the `cookie` option (a cookies.txt file path passed to yt-dlp
+  // --cookies) — NOT overrideDownloadOptions, which only applies to the native
+  // youtubei streaming path. Cookies defeat YouTube's bot-detection on
+  // datacenter IPs; yt-dlp solves the signature/n-challenge using node.
+  const ytOptions = {
     useYoutubeDL: true,
     generateWithPoToken: true,
-  });
+  };
+  if (hasCookies) {
+    ytOptions.cookie = cookiesFile;
+  }
+  const yt = await player.extractors.register(YoutubeiExtractor, ytOptions);
   if (!yt) console.warn('[music] YoutubeiExtractor failed to register — YouTube playback will be unavailable.');
 
   const spotifyConfig = bot.config?.music?.spotify || {};

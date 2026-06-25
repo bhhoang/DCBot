@@ -50,6 +50,12 @@ async function handle(interaction, bot) {
       return interaction.update({ content: `${musicEmojiStr('cancel', '✕')} Join a voice channel to play tracks.`, embeds: [], components: [] });
     }
 
+    // addTrack extracts the stream and joins voice — this routinely takes longer
+    // than Discord's 3s interaction window. Ack immediately with deferUpdate(),
+    // then edit the (ephemeral picker) reply once the work completes. Using
+    // update() after the window expires throws 40060 (already acknowledged).
+    await interaction.deferUpdate();
+
     try {
       await player.addTrack(guildId, voiceChannel, track, interaction.user);
       state.clearPicker(userId);
@@ -62,10 +68,10 @@ async function handle(interaction, bot) {
         });
         s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
       }
-      return interaction.update({ content: `${musicEmojiStr('check', '✓')} Queued: **${track.title}**`, embeds: [], components: [] });
+      return interaction.editReply({ content: `${musicEmojiStr('check', '✓')} Queued: **${track.title}**`, embeds: [], components: [] });
     } catch (error) {
       console.error('[music] addTrack error:', error.message);
-      return interaction.update({ content: `${musicEmojiStr('cancel', '✕')} Could not queue that track.`, embeds: [], components: [] });
+      return interaction.editReply({ content: `${musicEmojiStr('cancel', '✕')} Could not queue that track.`, embeds: [], components: [] });
     }
   }
 
