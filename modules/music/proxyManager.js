@@ -76,8 +76,125 @@ function create({ now = Date.now, config = {} } = {}) {
   };
 }
 
+const https = require('https');
+
+// Editable list of public free-proxy sources. These rot over time — keep small.
+const FREE_PROXY_SOURCES = [
+  'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt',
+  'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
+];
+
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+// Default scraper: fetch sources, return ["http://host:port", ...].
+async function scrapeFreeProxies() {
+  const out = [];
+  for (const src of FREE_PROXY_SOURCES) {
+    try {
+      const body = await httpGet(src);
+      for (const line of body.split(/\r?\n/)) {
+        const m = line.trim().match(/^(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})$/);
+        if (m) out.push(`http://${m[1]}:${m[2]}`);
+      }
+    } catch { /* source down; skip */ }
+  }
+  return out;
+}
+
+// Default validator: run bundled yt-dlp through the proxy in simulate mode and
+// require a real stream URL within the speed bar (undici ~10s connect headroom).
+async function validateProxy(proxyUrl, testUrl, cookiesFile, maxSecs = 12) {
+  const { exec } = require('youtube-dl-exec');
+  const t0 = Date.now();
+  try {
+    const cp = exec(testUrl, {
+      proxy: proxyUrl,
+      simulate: true,
+      getUrl: true,
+      noWarnings: true,
+      noPlaylist: true,
+      socketTimeout: 15,
+      ...(cookiesFile ? { cookies: cookiesFile } : {}),
+    });
+    const result = await cp;
+    const elapsed = (Date.now() - t0) / 1000;
+    const stdout = (result.stdout || '').trim();
+    return stdout.startsWith('http') && elapsed <= maxSecs;
+  } catch {
+    return false;
+  }
+}
+
+let singleton = null;
+let refreshTimer = null;
+
+async function buildPool(cfg, scraper, validator) {
+  if (!cfg.freePool?.enabled) return [];
+  const want = cfg.freePool.validateCount ?? 5;
+  const candidates = await scraper();
+  const live = [];
+  for (const url of candidates) {
+    if (live.length >= want) break;
+    const ok = await validator(url, cfg.freePool.testUrl, cfg.cookiesFile);
+    if (ok) live.push({ url, validatedAt: Date.now() });
+  }
+  return live;
+}
+
+async function _initCommon(cfg, scraper, validator) {
+  singleton = create({ config: cfg });
+  const pool = await buildPool(cfg, scraper, validator);
+  singleton._setFreePool(pool);
+  return singleton;
+}
+
+// Production init: kicks the first pool build in the BACKGROUND (never blocks
+// boot or playback). Schedules periodic refresh.
+function init(cfg) {
+  singleton = create({ config: cfg });
+  if (cfg.enabled && cfg.freePool?.enabled) {
+    const refresh = async () => {
+      try {
+        const pool = await buildPool(cfg, scrapeFreeProxies, (u, t, c) =>
+          validateProxy(u, t, c));
+        if (pool.length) singleton._setFreePool(pool);
+      } catch (e) { console.warn('[music] proxy pool refresh failed:', e.message); }
+    };
+    refresh(); // fire-and-forget
+    const everyMs = (cfg.freePool.refreshMinutes ?? 30) * 60 * 1000;
+    refreshTimer = setInterval(refresh, everyMs);
+    if (refreshTimer.unref) refreshTimer.unref();
+  }
+  return singleton;
+}
+
+function shutdown() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  singleton = null;
+}
+
+// Test helper: deterministic init with injected scraper/validator, awaited.
+async function _initForTest({ config, scraper, validator }) {
+  return _initCommon(config, scraper, validator);
+}
+
 module.exports = {
+  init,
+  shutdown,
+  current: () => (singleton ? singleton.current() : null),
+  reportBlock: (e) => singleton && singleton.reportBlock(e),
+  reportSuccess: () => singleton && singleton.reportSuccess(),
+  getStatus: () => (singleton ? singleton.getStatus() : { tier: 'uninit' }),
   _parseEndpoint: parseEndpoint,
   _isBlockError: isBlockError,
   _create: create,
+  _initForTest,
 };

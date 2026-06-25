@@ -63,3 +63,19 @@ test('isBlockError matches known signatures', () => {
   assert.ok(pm._isBlockError(new Error('Proxy response 400')));
   assert.ok(!pm._isBlockError(new Error('ECONNRESET')));
 });
+
+test('init builds a singleton whose current() reflects validated pool', async () => {
+  const fakeValidator = async () => true; // every candidate "works"
+  const fakeScraper = async () => ['http://free9:80', 'http://free8:80'];
+  await pm._initForTest({
+    config: {
+      enabled: true,
+      freePool: { enabled: true, validateCount: 2, refreshMinutes: 9999, testUrl: 'x' },
+      residential: { endpoint: '1.1.1.1:80:u:p', cooldownMinutes: 30 },
+    },
+    scraper: fakeScraper,
+    validator: fakeValidator,
+  });
+  assert.strictEqual(pm.current(), 'http://free9:80');
+  assert.ok(pm.getStatus().poolSize >= 1);
+});
