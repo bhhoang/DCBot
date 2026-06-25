@@ -58,6 +58,16 @@
     "apiKey": ""
   },
 
+  "music": {
+    "spotify": {
+      "clientId": "",
+      "clientSecret": ""
+    },
+    "youtube": {
+      "cookiesFile": "./config/youtube-cookies.txt"
+    }
+  },
+
   "features": {
     "welcomeMessages": true,
     "leaveMessages": true,
