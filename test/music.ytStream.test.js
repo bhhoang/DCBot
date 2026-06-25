@@ -30,6 +30,10 @@ test('buildExecOptions omits proxy when null and POT when disabled', () => {
   });
   assert.ok(!('proxy' in opts));
   assert.ok(opts.extractorArgs.every((a) => !a.includes('bgutilhttp')));
+  // POT disabled: must NOT pin a player_client. Forcing mweb/web/tv without a
+  // PO token yields no playable formats (empty stream). yt-dlp's default client
+  // streams fine, so leave the override off entirely.
+  assert.ok(opts.extractorArgs.every((a) => !a.includes('player_client')));
 });
 
 test('createStream calls exec with assembled opts and returns stdout', async () => {

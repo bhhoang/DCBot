@@ -3,17 +3,23 @@
 // useYoutubeDL path hardcodes its yt-dlp options (only cookies/format/output/
 // noWarnings/noProgress) and forwards neither proxy nor extractor-args. Supplying
 // createStream replaces that spawn entirely, giving us full control: PO token
-// provider (bgutil) + player_client=mweb + rotating proxy + cookies.
+// provider (bgutil) + player_client=mweb (only when POT is enabled) + rotating
+// proxy + cookies.
 
 // Build the youtube-dl-exec options object (camelCase keys -> yt-dlp flags).
 function buildExecOptions({ cookiesFile, proxyUrl, poToken }) {
   const extractorArgs = [];
   const pot = poToken || {};
-  const client = pot.playerClient || 'mweb';
-  // player_client + POT live under the same "youtube:" namespace; bgutil uses its
-  // own "youtubepot-bgutilhttp:" namespace. Pass as two separate --extractor-args.
-  extractorArgs.push(`youtube:player_client=${client}`);
+  // The POT-requiring clients (mweb/web/tv) only return playable formats when a
+  // PO token is supplied. Only pin player_client when POT is actually enabled;
+  // otherwise let yt-dlp pick its default client, which streams without a token.
+  // Forcing mweb without the bgutil sidecar yields "Requested format is not
+  // available" -> empty stream -> silence + disconnect.
   if (pot.enabled && pot.baseUrl) {
+    const client = pot.playerClient || 'mweb';
+    // player_client + POT live under the same "youtube:" namespace; bgutil uses
+    // its own "youtubepot-bgutilhttp:" namespace. Two separate --extractor-args.
+    extractorArgs.push(`youtube:player_client=${client}`);
     extractorArgs.push(`youtubepot-bgutilhttp:base_url=${pot.baseUrl}`);
   }
   const opts = {
