@@ -44,6 +44,22 @@ async function init(client, bot) {
     console.warn(`[music] no YouTube cookies file at ${cookiesFile} — playback may fail with bot-detection. See docs.`);
   }
 
+  // Optional outbound proxy for YouTube traffic. Two distinct layers must be
+  // covered separately:
+  //   1. yt-dlp audio stream — the extractor hardcodes its yt-dlp exec options
+  //      and does NOT forward a proxy, so the only lever is the HTTP(S)_PROXY
+  //      env vars the spawned yt-dlp child inherits.
+  //   2. youtubei.js metadata fetches — routed via the extractor's `proxy`
+  //      option (an undici ProxyAgent).
+  // Setting HTTP(S)_PROXY is process-global, but discord.js/ws do not honor it,
+  // so in practice only the yt-dlp child process is affected.
+  const proxyUrl = bot.config?.music?.youtube?.proxy;
+  if (proxyUrl) {
+    process.env.HTTP_PROXY = proxyUrl;
+    process.env.HTTPS_PROXY = proxyUrl;
+    console.log('[music] routing YouTube traffic through proxy (yt-dlp + metadata)');
+  }
+
   // useYoutubeDL routes audio streaming through yt-dlp (youtubei.js cannot
   // produce a playable URL without a server PO token). The extractor's yt-dlp
   // path reads the `cookie` option (a cookies.txt file path passed to yt-dlp
@@ -56,6 +72,14 @@ async function init(client, bot) {
   };
   if (hasCookies) {
     ytOptions.cookie = cookiesFile;
+  }
+  if (proxyUrl) {
+    try {
+      const { ProxyAgent } = require('undici');
+      ytOptions.proxy = new ProxyAgent(proxyUrl);
+    } catch (error) {
+      console.warn('[music] could not build undici ProxyAgent for metadata fetches:', error.message);
+    }
   }
   const yt = await player.extractors.register(YoutubeiExtractor, ytOptions);
   if (!yt) console.warn('[music] YoutubeiExtractor failed to register — YouTube playback will be unavailable.');

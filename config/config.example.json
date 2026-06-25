@@ -64,7 +64,8 @@
       "clientSecret": ""
     },
     "youtube": {
-      "cookiesFile": "./config/youtube-cookies.txt"
+      "cookiesFile": "./config/youtube-cookies.txt",
+      "proxy": ""
     }
   },
 
