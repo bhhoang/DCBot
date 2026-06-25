@@ -30,10 +30,12 @@ test('buildExecOptions omits proxy when null and POT when disabled', () => {
   });
   assert.ok(!('proxy' in opts));
   assert.ok(opts.extractorArgs.every((a) => !a.includes('bgutilhttp')));
-  // POT disabled: must NOT pin a player_client. Forcing mweb/web/tv without a
-  // PO token yields no playable formats (empty stream). yt-dlp's default client
-  // streams fine, so leave the override off entirely.
-  assert.ok(opts.extractorArgs.every((a) => !a.includes('player_client')));
+  // POT disabled: pin android_vr (no token needed, direct progressive stream —
+  // avoids the slow HLS path). Must NOT pin a POT-requiring client (mweb/web/tv).
+  assert.ok(opts.extractorArgs.some((a) => a.includes('player_client=android_vr')));
+  assert.ok(opts.extractorArgs.every((a) => !a.includes('player_client=mweb')));
+  // Progressive-https format preference so playback skips m3u8 fetch.
+  assert.ok(opts.format.includes('protocol^=https'));
 });
 
 test('createStream calls exec with assembled opts and returns stdout', async () => {

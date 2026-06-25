@@ -46,10 +46,16 @@ function create({ now = Date.now, config = {} } = {}) {
   let cooldownUntil = 0;
 
   function pick() {
+    // Cooldown window after a block: stick to residential.
     if (now() < cooldownUntil && residentialUrl) return residentialUrl;
+    // Prefer the free pool when one has been built.
     if (freePool.length) return freePool[0].url;
+    // Otherwise use the configured residential proxy as the steady-state route.
+    // Required for hosts whose IP YouTube blocks outright (e.g. Oracle/most VPS
+    // ranges): direct streaming connects then gets cut mid-playback, so there is
+    // no usable "direct" tier — the proxy is the default, not just a fallback.
     if (residentialUrl) return residentialUrl;
-    return null; // direct
+    return null; // direct (only when no proxy is configured at all)
   }
 
   return {
@@ -65,7 +71,7 @@ function create({ now = Date.now, config = {} } = {}) {
       const redacted = cur && cur.includes('@')
         ? cur.replace(/\/\/[^@]+@/, '//***@') : cur;
       return {
-        tier: now() < cooldownUntil ? 'residential' : (freePool.length ? 'free' : (residentialUrl ? 'residential' : 'direct')),
+        tier: now() < cooldownUntil && residentialUrl ? 'residential' : (freePool.length ? 'free' : (residentialUrl ? 'residential' : 'direct')),
         current: redacted,
         poolSize: freePool.length,
         cooldownRemaining: Math.round(remaining / 1000),

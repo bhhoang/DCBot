@@ -10,21 +10,28 @@
 function buildExecOptions({ cookiesFile, proxyUrl, poToken }) {
   const extractorArgs = [];
   const pot = poToken || {};
-  // The POT-requiring clients (mweb/web/tv) only return playable formats when a
-  // PO token is supplied. Only pin player_client when POT is actually enabled;
-  // otherwise let yt-dlp pick its default client, which streams without a token.
-  // Forcing mweb without the bgutil sidecar yields "Requested format is not
-  // available" -> empty stream -> silence + disconnect.
   if (pot.enabled && pot.baseUrl) {
-    const client = pot.playerClient || 'mweb';
+    // POT enabled: pin the POT-requiring client (mweb default) + bgutil provider.
     // player_client + POT live under the same "youtube:" namespace; bgutil uses
     // its own "youtubepot-bgutilhttp:" namespace. Two separate --extractor-args.
+    const client = pot.playerClient || 'mweb';
     extractorArgs.push(`youtube:player_client=${client}`);
     extractorArgs.push(`youtubepot-bgutilhttp:base_url=${pot.baseUrl}`);
+  } else {
+    // POT disabled: pin android_vr. It needs no PO token AND returns a direct
+    // progressive stream URL, so we skip yt-dlp's default HLS/m3u8 path — which
+    // costs several extra proxy round-trips (~14s vs ~6s to first byte through a
+    // residential proxy). Leaving the client unset works but is much slower.
+    extractorArgs.push('youtube:player_client=android_vr');
   }
+  // Prefer a progressive https stream over HLS so playback starts without
+  // fetching+parsing an m3u8 manifest (another proxy round-trip).
+  const format = (pot.enabled && pot.baseUrl)
+    ? 'bestaudio'
+    : 'bestaudio[protocol^=https]/bestaudio';
   const opts = {
     jsRuntimes: 'node',
-    format: 'bestaudio',
+    format,
     output: '-',
     noWarnings: true,
     noProgress: true,
@@ -50,17 +57,29 @@ async function createStreamWith(track, config, proxyManager, exec) {
     cp.then(() => proxyManager.reportSuccess())
       .catch((err) => proxyManager.reportBlock(err));
   }
-  const stream = cp.stdout;
-  // Kill the yt-dlp child when the stream finishes — discord-player-youtubei's
-  // built-in path (which createStream replaces) does this; without it the child
-  // lingers on skip/stop. Guarded so injected test fakes (plain objects) no-op.
-  if (cp && typeof cp.kill === 'function' && stream && typeof stream.on === 'function') {
-    const kill = () => { if (!cp.killed) cp.kill(); };
-    stream.on('close', kill);
-    stream.on('error', kill);
-    stream.on('end', kill);
+  const raw = cp.stdout;
+  // When the audio path runs through a proxy, the proxy adds latency jitter.
+  // discord-player reads cp.stdout in real time through a small (~64KB) pipe, so
+  // a momentary proxy stall starves ffmpeg and the audio stutters/garbles. Insert
+  // a large read-ahead buffer: yt-dlp downloads far ahead into memory (a 3-4min
+  // track is only ~3.5MB and arrives in seconds), and the consumer drains it at
+  // playback pace — jitter no longer causes underruns. Skipped for test fakes
+  // (raw is a string, has no .pipe).
+  if (raw && typeof raw.pipe === 'function') {
+    const { PassThrough } = require('stream');
+    const buffered = new PassThrough({ highWaterMark: 1 << 25 }); // 32MB read-ahead
+    raw.pipe(buffered);
+    raw.on('error', (err) => buffered.destroy(err));
+    const kill = () => { if (cp && typeof cp.kill === 'function' && !cp.killed) cp.kill(); };
+    // Kill the yt-dlp child when playback ends/stops — discord-player-youtubei's
+    // built-in path (which createStream replaces) does this; without it the child
+    // lingers on skip/stop.
+    buffered.on('close', kill);
+    buffered.on('error', kill);
+    raw.on('end', () => { /* child exits on its own once stdout ends */ });
+    return buffered;
   }
-  return stream;
+  return raw;
 }
 
 // Factory: returns a createStream(track, extractor) bound to live config + pm.
