@@ -44,7 +44,17 @@ async function createStreamWith(track, config, proxyManager, exec) {
     cp.then(() => proxyManager.reportSuccess())
       .catch((err) => proxyManager.reportBlock(err));
   }
-  return cp.stdout;
+  const stream = cp.stdout;
+  // Kill the yt-dlp child when the stream finishes — discord-player-youtubei's
+  // built-in path (which createStream replaces) does this; without it the child
+  // lingers on skip/stop. Guarded so injected test fakes (plain objects) no-op.
+  if (cp && typeof cp.kill === 'function' && stream && typeof stream.on === 'function') {
+    const kill = () => { if (!cp.killed) cp.kill(); };
+    stream.on('close', kill);
+    stream.on('error', kill);
+    stream.on('end', kill);
+  }
+  return stream;
 }
 
 // Factory: returns a createStream(track, extractor) bound to live config + pm.
