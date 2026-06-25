@@ -61,10 +61,31 @@ function formatTrackDuration(track) {
   return formatDuration(track.duration);
 }
 
-function nowPlayingEmbed(track, requestedBy, loopMode, volume, isPaused = false) {
+// Pure: build the "Up next" field value from a queue's upcoming tracks array.
+// Returns '' when nothing is queued so the caller can omit the field.
+function upNextLine(tracks) {
+  if (!tracks || tracks.length === 0) return '';
+  const first = tracks[0];
+  const more = tracks.length > 1 ? ` (+${tracks.length - 1} more)` : '';
+  return `**${first.title}**${more}`;
+}
+
+function nowPlayingEmbed(track, requestedBy, loopMode, volume, isPaused = false, queue = null) {
+  // Progress bar from discord-player. Null on live streams / no timestamp — omit
+  // rather than fake a bar.
+  let progress = '';
+  if (queue && queue.node) {
+    try {
+      const ts = queue.node.getTimestamp();
+      if (ts) {
+        const bar = queue.node.createProgressBar({ timecodes: true, length: 14 });
+        if (bar) progress = `\n${bar}`;
+      }
+    } catch { /* live stream or no active resource — no bar */ }
+  }
   const embed = new EmbedBuilder()
     .setTitle(`${musicEmojiStr(isPaused ? 'pause' : 'play', isPaused ? '⏸' : '🎵')} Now Playing`)
-    .setDescription(`**${track.title}**`)
+    .setDescription(`**${track.title}**${progress}`)
     .setColor(isPaused ? Colors.Yellow : Colors.Green)
     .addFields(
       { name: 'Source', value: trackSourceLabel(track), inline: true },
@@ -72,6 +93,8 @@ function nowPlayingEmbed(track, requestedBy, loopMode, volume, isPaused = false)
       { name: 'Volume', value: `${volume ?? 100}%`, inline: true },
       { name: 'Requested by', value: requestedBy || 'unknown', inline: true },
     );
+  const next = queue && queue.tracks ? upNextLine(queue.tracks.data) : '';
+  if (next) embed.addFields({ name: 'Up next', value: next, inline: false });
   if (track.thumbnail) embed.setThumbnail(track.thumbnail);
   return embed;
 }
@@ -153,11 +176,13 @@ async function refreshNowPlaying(queue, track, mode) {
   const s = state.get(guildId);
   if (!s || !s.nowPlayingMessage) return;
 
-  // queue.metadata is built in player.js as { channelId, guildId, volume, loopMode }
-  // — no channel field, so always resolve the channel from the saved ref.
+  // Resolve the discord.js client. On a GuildQueue it lives at queue.player.client
+  // (NOT queue.client — that is undefined, which silently broke the live progress
+  // ticker: every timer-driven refresh hit the null-channel guard and no-op'd).
+  const client = queue.player?.client || queue.client;
   let channel, message;
   try {
-    channel = await queue.client?.channels?.fetch?.(s.nowPlayingMessage.channelId);
+    channel = await client?.channels?.fetch?.(s.nowPlayingMessage.channelId);
   } catch { return; }
   if (!channel) return;
   try {
@@ -184,7 +209,7 @@ async function refreshNowPlaying(queue, track, mode) {
     // 'playing' or 'paused'
     const requestedBy = track?.requestedBy?.username || 'unknown';
     const isPaused = mode === 'paused';
-    embed = nowPlayingEmbed(track, requestedBy, s.loopMode, s.volume, isPaused);
+    embed = nowPlayingEmbed(track, requestedBy, s.loopMode, s.volume, isPaused, queue);
     rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ false, /*isPaused=*/ isPaused, /*isMuted=*/ isMuted);
   }
   await message.edit({ embeds: [embed], components: rows }).catch((err) => {
@@ -216,5 +241,5 @@ module.exports = {
   searchEmbed, queueEmbed, errorEmbed, streamErrorEmbed,
   refreshNowPlaying, ensureNowPlayingMessage,
   // Exported for tests:
-  formatDuration, formatTrackDuration,
+  formatDuration, formatTrackDuration, upNextLine,
 };

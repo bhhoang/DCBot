@@ -124,6 +124,14 @@ async function init(client, bot) {
   player.events.on(GuildQueueEvent.PlayerStart, async (queue, track) => {
     proxyManager.reportSuccess();
     await refreshNowPlaying(queue, track, 'playing');
+    // Start a live ticker so the progress bar advances without button presses.
+    // The tick self-skips while paused and self-heals if the queue is gone.
+    state.startProgressTimer(queue.id, () => {
+      const q = getQueue(queue.id);
+      if (!q) { state.stopProgressTimer(queue.id); return; }
+      if (q.node.isPaused()) return;
+      onQueueUpdate(queue.id).catch(() => {});
+    });
   });
 
   // NOTE: We intentionally do NOT subscribe to PlayerPause / PlayerResume
@@ -141,6 +149,7 @@ async function init(client, bot) {
   // authoritative.
 
   player.events.on(GuildQueueEvent.EmptyQueue, async (queue) => {
+    state.stopProgressTimer(queue.id);
     await refreshNowPlaying(queue, null, 'empty');
   });
 
@@ -158,6 +167,9 @@ async function init(client, bot) {
   });
 
   player.events.on(GuildQueueEvent.Disconnect, async (queue) => {
+    // Stop the ticker first so a racing tick can't re-render 'playing' over the
+    // 'disconnected' embed below.
+    state.stopProgressTimer(queue.id);
     // Render the disconnected embed first (state.clear() would null the
     // nowPlayingMessage ref that refreshNowPlaying needs to find the message).
     await refreshNowPlaying(queue, null, 'disconnected');

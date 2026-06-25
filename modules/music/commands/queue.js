@@ -103,7 +103,7 @@ function nowPlayingCommand() {
       const track = q.currentTrack;
       const s = state.getOrCreate(guildId);
       const isPaused = q.node.isPaused();
-      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused)];
+      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused, q)];
       const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, s.preMuteVolume !== null);
       const channel = interaction.channel;
       // Try to edit the existing persistent message first; only post a new one
@@ -130,7 +130,7 @@ function nowPlayingCommand() {
       const track = q.currentTrack;
       const s = state.getOrCreate(guildId);
       const isPaused = q.node.isPaused();
-      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused)];
+      const embeds = [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused, q)];
       const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, s.preMuteVolume !== null);
       const channel = message.channel;
       if (s.nowPlayingMessage) {

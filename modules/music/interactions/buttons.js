@@ -49,7 +49,7 @@ function renderNowPlaying(guildId) {
   const isPaused = q.node.isPaused();
   const isMuted = s.preMuteVolume !== null;
   const track = q.currentTrack;
-  const embeds = [nowPlayingEmbed(track, track?.requestedBy?.username, s.loopMode, s.volume, isPaused)];
+  const embeds = [nowPlayingEmbed(track, track?.requestedBy?.username, s.loopMode, s.volume, isPaused, q)];
   const { nowPlayingRows } = require('../ui/components');
   const components = nowPlayingRows(s.loopMode, s.volume, false, isPaused, isMuted);
   return { embeds, components };
@@ -100,6 +100,34 @@ async function handle(interaction, bot) {
       const rendered = renderNowPlaying(guildId);
       if (!rendered) return ephemeral(interaction, '⏹ Queue empty.');
       return interaction.update(rendered);
+    }
+    if (id === IDS.NP_PREV) {
+      if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to control playback.`);
+      }
+      const q = player.getQueue(guildId);
+      if (!q || q.history.isEmpty()) return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} No previous track.`);
+      await q.history.back();
+      const rendered = renderNowPlaying(guildId);
+      if (!rendered) return ephemeral(interaction, '⏮ Previous.');
+      return interaction.update(rendered);
+    }
+    if (id === IDS.NP_SEEK_FWD) {
+      if (!inSameVoice(interaction.member, interaction.guild.members.me)) {
+        return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Join the same voice channel to control playback.`);
+      }
+      const q = player.getQueue(guildId);
+      const ts = q?.node?.getTimestamp?.();
+      if (!ts) return ephemeral(interaction, `${musicEmojiStr('cancel', '✕')} Can't seek this stream.`);
+      const target = Math.min(ts.current.value + 10000, ts.total.value);
+      // Seeking re-spawns yt-dlp from the offset (a custom createStream can't
+      // seek in place), so there's a few seconds of silence while it re-buffers.
+      // Ack immediately so the click doesn't look frozen / time out the 3s
+      // interaction window, then fire the seek without blocking. The resulting
+      // replay emits PlayerStart, whose handler refreshes the Now Playing message.
+      await ephemeral(interaction, `⏩ Seeking to ${ts ? require('../ui/embeds').formatDuration(target) : '+10s'}… (buffering)`);
+      q.node.seek(target).catch((e) => console.error('[music] seek:', e.message));
+      return;
     }
     if (id === 'music:np:stop') {
       if (!inSameVoice(interaction.member, interaction.guild.members.me)) {

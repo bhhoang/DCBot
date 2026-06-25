@@ -11,6 +11,8 @@ const IDS = {
   NP_PAUSE: 'music:np:pause',
   NP_RESUME: 'music:np:resume',
   NP_SKIP_1: 'music:np:skip:1',
+  NP_PREV: 'music:np:prev',
+  NP_SEEK_FWD: 'music:np:seek:fwd',
   NP_LOOP: 'music:np:loop',
   NP_SHUFFLE: 'music:np:shuffle',
   NP_QUEUE: 'music:np:queue',
@@ -76,15 +78,15 @@ function nowPlayingRows(loopMode, volume, disabled, isPaused = false, isMuted = 
 
   const volumeRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(IDS.NP_VOL_DOWN)
-      .setLabel('Vol -10')
-      .setEmoji(musicEmoji('volDown', '🔉'))
+      .setCustomId(IDS.NP_PREV)
+      .setLabel('Previous')
+      .setEmoji(musicEmoji('prev', '⏮'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
-      .setCustomId(IDS.NP_VOL_UP)
-      .setLabel('Vol +10')
-      .setEmoji(musicEmoji('volUp', '🔊'))
+      .setCustomId(IDS.NP_SEEK_FWD)
+      .setLabel('+10s')
+      .setEmoji(musicEmoji('seekFwd', '⏩'))
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
     new ButtonBuilder()
