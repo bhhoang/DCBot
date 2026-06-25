@@ -18,6 +18,8 @@ const { providerLabel } = require('./providers');
 const soundcloudSearch = require('./soundcloudSearch');
 const spotifySearch = require('./spotifySearch');
 const state = require('./state');
+const proxyManager = require('./proxyManager');
+const ytStream = require('./ytStream');
 const { refreshNowPlaying } = require('./ui/embeds'); // created in Task 4
 
 let player = null;
@@ -44,21 +46,19 @@ async function init(client, bot) {
     console.warn(`[music] no YouTube cookies file at ${cookiesFile} — playback may fail with bot-detection. See docs.`);
   }
 
-  // Optional outbound proxy for YouTube traffic. Two distinct layers must be
-  // covered separately:
-  //   1. yt-dlp audio stream — the extractor hardcodes its yt-dlp exec options
-  //      and does NOT forward a proxy, so the only lever is the HTTP(S)_PROXY
-  //      env vars the spawned yt-dlp child inherits.
-  //   2. youtubei.js metadata fetches — routed via the extractor's `proxy`
-  //      option (an undici ProxyAgent).
-  // Setting HTTP(S)_PROXY is process-global, but discord.js/ws do not honor it,
-  // so in practice only the yt-dlp child process is affected.
-  const proxyUrl = bot.config?.music?.youtube?.proxy;
-  if (proxyUrl) {
-    process.env.HTTP_PROXY = proxyUrl;
-    process.env.HTTPS_PROXY = proxyUrl;
-    console.log('[music] routing YouTube traffic through proxy (yt-dlp + metadata)');
+  // Proxy + PO-token config. The proxy is applied per-stream inside ytStream's
+  // createStream hook (NOT via process env — discord-player-youtubei's hardcoded
+  // yt-dlp path ignores env and registration proxy options on the audio path).
+  const ytCfg = bot.config?.music?.youtube || {};
+  const proxyCfg = ytCfg.proxyRotation || {};
+  // Legacy single static proxy still honored: fold it into the residential slot.
+  if (ytCfg.proxy && !proxyCfg.residential?.endpoint) {
+    proxyCfg.residential = { endpoint: ytCfg.proxy, cooldownMinutes: 30 };
   }
+  proxyCfg.cookiesFile = cookiesFile;
+  proxyManager.init(proxyCfg);
+  const proxyUrl = proxyCfg.residential?.endpoint
+    ? proxyManager._parseEndpoint(proxyCfg.residential.endpoint) : null;
 
   // useYoutubeDL routes audio streaming through yt-dlp (youtubei.js cannot
   // produce a playable URL without a server PO token). The extractor's yt-dlp
@@ -69,6 +69,10 @@ async function init(client, bot) {
   const ytOptions = {
     useYoutubeDL: true,
     generateWithPoToken: true,
+    createStream: ytStream.make(
+      { cookiesFile, poToken: ytCfg.poToken || { enabled: false } },
+      proxyManager,
+    ),
   };
   if (hasCookies) {
     ytOptions.cookie = cookiesFile;
@@ -118,6 +122,7 @@ async function init(client, bot) {
   // Subscribe to events — each handler resolves the GuildQueue to a GuildMusicState
   // via state.get(guildId) and refreshes the Now Playing message.
   player.events.on(GuildQueueEvent.PlayerStart, async (queue, track) => {
+    proxyManager.reportSuccess();
     await refreshNowPlaying(queue, track, 'playing');
   });
 
@@ -140,12 +145,14 @@ async function init(client, bot) {
   });
 
   player.events.on(GuildQueueEvent.Error, (queue, error) => {
+    proxyManager.reportBlock(error);
     console.error('[music] queue error:', error.message);
     // Keep playing if more tracks queued; refresh to show error footer.
     refreshNowPlaying(queue, queue.currentTrack, 'error').catch(() => {});
   });
 
   player.events.on(GuildQueueEvent.PlayerError, (queue, error) => {
+    proxyManager.reportBlock(error);
     console.error('[music] player error:', error.message);
     refreshNowPlaying(queue, queue.currentTrack, 'error').catch(() => {});
   });
@@ -160,11 +167,20 @@ async function init(client, bot) {
   // Expose for hot-reload + cross-module access.
   client.player = player;
   bot.player = player;
+  // Warn loudly if PO tokens are enabled but the bgutil sidecar is unreachable.
+  if (ytCfg.poToken?.enabled && ytCfg.poToken.baseUrl) {
+    require('http').get(ytCfg.poToken.baseUrl + '/ping', (res) => res.resume())
+      .on('error', () => console.warn(
+        `[music] PO-token sidecar unreachable at ${ytCfg.poToken.baseUrl} — `
+        + 'YouTube playback will fall back to cookie-only and may hit 403s. '
+        + 'Start bgutil-ytdlp-pot-provider.'));
+  }
   state.startGc();
 }
 
 async function shutdown() {
   state.stopGc();
+  proxyManager.shutdown();
   if (player) {
     try { await player.destroy(); } catch (error) { console.error('[music] destroy error:', error.message); }
     player = null;
