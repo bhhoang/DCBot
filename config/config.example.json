@@ -65,7 +65,26 @@
     },
     "youtube": {
       "cookiesFile": "./config/youtube-cookies.txt",
-      "proxy": ""
+      "proxy": "",
+      "poToken": {
+        "enabled": false,
+        "baseUrl": "http://127.0.0.1:4416",
+        "playerClient": "mweb",
+        "pluginDirs": "./config/yt-dlp-plugins"
+      },
+      "proxyRotation": {
+        "enabled": false,
+        "freePool": {
+          "enabled": true,
+          "refreshMinutes": 30,
+          "validateCount": 5,
+          "testUrl": "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+        },
+        "residential": {
+          "endpoint": "",
+          "cooldownMinutes": 30
+        }
+      }
     }
   },
 
