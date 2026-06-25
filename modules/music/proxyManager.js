@@ -21,4 +21,63 @@ function parseEndpoint(raw) {
   return null;
 }
 
-module.exports = { _parseEndpoint: parseEndpoint };
+const BLOCK_SIGNATURES = [
+  /sign in to confirm/i,
+  /not a bot/i,
+  /HTTP Error 429/i,
+  /\b429\b/,
+  /HTTP Error 403/i,
+  /\b403\b/,
+  /Proxy response 400/i,
+  /no video formats found/i,
+  /requested format is not available/i,
+];
+
+function isBlockError(err) {
+  const msg = (err && (err.message || String(err))) || '';
+  return BLOCK_SIGNATURES.some((re) => re.test(msg));
+}
+
+// Factory so tests can inject a fake clock + config without touching globals.
+function create({ now = Date.now, config = {} } = {}) {
+  const residentialUrl = parseEndpoint(config.residential?.endpoint);
+  const cooldownMs = (config.residential?.cooldownMinutes ?? 30) * 60 * 1000;
+  let freePool = [];          // [{url, validatedAt}]
+  let cooldownUntil = 0;
+
+  function pick() {
+    if (now() < cooldownUntil && residentialUrl) return residentialUrl;
+    if (freePool.length) return freePool[0].url;
+    if (residentialUrl) return residentialUrl;
+    return null; // direct
+  }
+
+  return {
+    current: pick,
+    reportBlock(err) {
+      if (!isBlockError(err)) return;
+      if (residentialUrl) cooldownUntil = now() + cooldownMs;
+    },
+    reportSuccess() { /* drift back to free is automatic once cooldown expires */ },
+    getStatus() {
+      const remaining = Math.max(0, cooldownUntil - now());
+      const cur = pick();
+      const redacted = cur && cur.includes('@')
+        ? cur.replace(/\/\/[^@]+@/, '//***@') : cur;
+      return {
+        tier: now() < cooldownUntil ? 'residential' : (freePool.length ? 'free' : (residentialUrl ? 'residential' : 'direct')),
+        current: redacted,
+        poolSize: freePool.length,
+        cooldownRemaining: Math.round(remaining / 1000),
+      };
+    },
+    _setFreePool(list) { freePool = list.slice(); },
+    _residentialUrl: () => residentialUrl,
+  };
+}
+
+module.exports = {
+  _parseEndpoint: parseEndpoint,
+  _isBlockError: isBlockError,
+  _create: create,
+};
