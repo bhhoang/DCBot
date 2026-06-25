@@ -215,17 +215,14 @@ async function handle(interaction, bot) {
 
     // === Queue view (userId in customId) ===
     if (id.startsWith(IDS.QUEUE_PAGE_PREV)) {
-      const ownerId = id.slice(IDS.QUEUE_PAGE_PREV.length);
+      const [ownerId, page] = id.slice(IDS.QUEUE_PAGE_PREV.length).split(':');
       if (ownerId !== userId) return;
-      // Page is encoded in the next segment by the handler; simpler: use a per-user
-      // page tracker. For now, re-render at page 0 and let the user navigate.
-      // The full implementation uses music:queue:page:prev:<userId>:<page>.
-      return sendQueueView(interaction, 0);
+      return sendQueueView(interaction, parseInt(page, 10) || 0);
     }
     if (id.startsWith(IDS.QUEUE_PAGE_NEXT)) {
-      const ownerId = id.slice(IDS.QUEUE_PAGE_NEXT.length);
+      const [ownerId, page] = id.slice(IDS.QUEUE_PAGE_NEXT.length).split(':');
       if (ownerId !== userId) return;
-      return sendQueueView(interaction, 0);
+      return sendQueueView(interaction, parseInt(page, 10) || 0);
     }
     if (id.startsWith(IDS.QUEUE_CLOSE)) {
       const ownerId = id.slice(IDS.QUEUE_CLOSE.length);

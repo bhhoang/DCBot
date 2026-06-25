@@ -104,7 +104,10 @@ function searchEmbed(query, pageIndex, totalPages, tracks, provider) {
 }
 
 function queueEmbed(tracks, pageIndex, totalPages) {
-  const lines = tracks.map((t, i) => {
+  // Render only this page's 10 tracks — matches queueRows' slice. Mapping the
+  // full list overflows Discord's 4096-char description limit on large queues.
+  const pageTracks = tracks.slice(pageIndex * 10, pageIndex * 10 + 10);
+  const lines = pageTracks.map((t, i) => {
     const idx = pageIndex * 10 + i + 1;
     const requester = t.requestedBy?.username || 'unknown';
     return `${idx}. **${t.title}** — ${formatTrackDuration(t)} — @${requester}`;
@@ -120,6 +123,26 @@ function errorEmbed(title, detail) {
     .setTitle(`${musicEmojiStr('cancel', '✕')} ${title}`)
     .setDescription(detail || 'Please try again.')
     .setColor(Colors.Red);
+}
+
+// Richer error for a failed stream: names the track and shows which proxy tier
+// was in use, so a silent failure becomes legible instead of dead air. proxyStatus
+// is proxyManager.getStatus() => { tier, current(redacted), poolSize, cooldownRemaining }.
+function streamErrorEmbed(track, proxyStatus) {
+  const title = track?.title ? `**${track.title}**` : 'the current track';
+  const embed = new EmbedBuilder()
+    .setTitle(`${musicEmojiStr('cancel', '✕')} Stream failed`)
+    .setDescription(`Couldn't stream ${title}. Trying the next track if one is queued.`)
+    .setColor(Colors.Red);
+  if (proxyStatus && proxyStatus.tier) {
+    const cd = proxyStatus.cooldownRemaining > 0 ? ` · cooldown ${proxyStatus.cooldownRemaining}s` : '';
+    embed.addFields({
+      name: 'Proxy',
+      value: `tier: ${proxyStatus.tier}${proxyStatus.poolSize ? ` · pool ${proxyStatus.poolSize}` : ''}${cd}`,
+      inline: false,
+    });
+  }
+  return embed;
 }
 
 // Called by player events. Looks up state, finds the persistent message,
@@ -154,7 +177,8 @@ async function refreshNowPlaying(queue, track, mode) {
     embed = disconnectedNowPlayingEmbed();
     rows = disconnectedNowPlayingRows();
   } else   if (mode === 'error') {
-    embed = errorEmbed('Playback error', 'The current track failed. Skipping to next if available.');
+    const proxyStatus = require('../proxyManager').getStatus();
+    embed = streamErrorEmbed(track, proxyStatus);
     rows = nowPlayingRows(s.loopMode, s.volume, /*disabled=*/ true, /*isPaused=*/ false, /*isMuted=*/ isMuted);
   } else {
     // 'playing' or 'paused'
@@ -172,10 +196,25 @@ async function refreshNowPlaying(queue, track, mode) {
   });
 }
 
+// Create the persistent Now Playing message for a guild if one does not already
+// exist, storing the ref on state. No-op if a message ref is already set. Returns
+// the state's nowPlayingMessage ref. Extracted from the duplicated inline blocks
+// in selects.js and the /play URL fast-path.
+async function ensureNowPlayingMessage(channel, guildId, track, isPaused = false) {
+  const s = state.getOrCreate(guildId);
+  if (s.nowPlayingMessage) return s.nowPlayingMessage;
+  const sent = await channel.send({
+    embeds: [nowPlayingEmbed(track, track.requestedBy?.username, s.loopMode, s.volume, isPaused)],
+    components: nowPlayingRows(s.loopMode, s.volume, false, isPaused, s.preMuteVolume !== null),
+  });
+  s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
+  return s.nowPlayingMessage;
+}
+
 module.exports = {
   nowPlayingEmbed, emptyNowPlayingEmbed, disconnectedNowPlayingEmbed,
-  searchEmbed, queueEmbed, errorEmbed,
-  refreshNowPlaying,
+  searchEmbed, queueEmbed, errorEmbed, streamErrorEmbed,
+  refreshNowPlaying, ensureNowPlayingMessage,
   // Exported for tests:
   formatDuration, formatTrackDuration,
 };

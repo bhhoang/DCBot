@@ -192,12 +192,19 @@ function getQueue(guildId) {
   return player.nodes.get(guildId) || null;
 }
 
+// True when the query is a recognizable media URL (full http(s) or a bare
+// domain form like youtu.be/...). Used to decide the /play fast-path.
+function isUrlQuery(query) {
+  if (!query || typeof query !== 'string') return false;
+  return /^https?:\/\//i.test(query)
+    || /^(www\.)?(youtube\.com|youtu\.be|open\.spotify\.com|soundcloud\.com)/i.test(query);
+}
+
 // Maps /play's provider choice + URL detection to a discord-player QueryType.
 // URLs use URL-specific types (YOUTUBE_VIDEO etc.) so a pasted Spotify link
 // with provider=spotify parses correctly; text uses the search type.
 function mapProviderToQueryType(provider, query) {
-  const isUrl = /^https?:\/\//i.test(query)
-    || /^(www\.)?(youtube\.com|youtu\.be|open\.spotify\.com|soundcloud\.com)/i.test(query);
+  const isUrl = isUrlQuery(query);
   const map = {
     youtube:    isUrl ? QueryType.YOUTUBE_VIDEO     : QueryType.YOUTUBE_SEARCH,
     spotify:    isUrl ? QueryType.SPOTIFY_SONG     : QueryType.SPOTIFY_SEARCH,
@@ -277,10 +284,24 @@ async function search(query, provider = 'auto') {
   return result.tracks;
 }
 
-async function addTrack(guildId, voiceChannel, track, requestedBy) {
+// Like search(), but returns { tracks, playlist }. The /play URL fast-path needs
+// the playlist ref (title + full track list) that search() discards. Custom
+// soundcloud/spotify paths have no playlist concept, so playlist is null there.
+async function resolve(query, provider = 'auto') {
   if (!player) throw new Error('Player not initialized');
+  if (provider === 'soundcloud') return { tracks: await customSoundCloudSearch(query), playlist: null };
+  if (provider === 'spotify') return { tracks: await customSpotifySearch(query), playlist: null };
+  const result = await player.search(query, { searchEngine: mapProviderToQueryType(provider, query) });
+  return { tracks: result.tracks, playlist: result.playlist || null };
+}
+
+async function addTracks(guildId, voiceChannel, tracks, requestedBy) {
+  if (!player) throw new Error('Player not initialized');
+  if (!tracks || tracks.length === 0) throw new Error('No tracks to add');
   const s = state.getOrCreate(guildId);
-  const result = await player.play(voiceChannel, track, {
+  // play() the first track (creates the queue + joins voice), then bulk-add the
+  // rest onto the existing queue so a pasted playlist enqueues in one shot.
+  const result = await player.play(voiceChannel, tracks[0], {
     requestedBy,
     nodeOptions: {
       metadata: {
@@ -297,7 +318,18 @@ async function addTrack(guildId, voiceChannel, track, requestedBy) {
       ...(s.loopMode !== 'off' ? { repeatMode: s.loopMode === 'track' ? 1 : 2 } : {}),
     },
   });
+  if (tracks.length > 1) {
+    const q = getQueue(guildId);
+    if (q) {
+      for (const t of tracks.slice(1)) t.requestedBy = requestedBy;
+      q.addTrack(tracks.slice(1));
+    }
+  }
   return result.track;
+}
+
+async function addTrack(guildId, voiceChannel, track, requestedBy) {
+  return addTracks(guildId, voiceChannel, [track], requestedBy);
 }
 
 async function pause(guildId) {
@@ -415,7 +447,7 @@ function listProviders() {
 
 module.exports = {
   init, shutdown,
-  getQueue, search, addTrack,
+  getQueue, search, resolve, addTrack, addTracks, isUrlQuery,
   pause, resume, skip, stop, shuffle,
   setLoop, setVolume, getVolume, toggleMute,
   getNowPlaying, onQueueUpdate,

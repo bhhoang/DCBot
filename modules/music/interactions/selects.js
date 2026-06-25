@@ -60,14 +60,7 @@ async function handle(interaction, bot) {
       await player.addTrack(guildId, voiceChannel, track, interaction.user);
       state.clearPicker(userId);
       // Create Now Playing message on first track.
-      const s = state.getOrCreate(guildId);
-      if (!s.nowPlayingMessage) {
-        const sent = await interaction.channel.send({
-          embeds: [require('../ui/embeds').nowPlayingEmbed(track, interaction.user.username, s.loopMode, s.volume)],
-          components: require('../ui/components').nowPlayingRows(s.loopMode, s.volume, false, false, false),
-        });
-        s.nowPlayingMessage = { channelId: sent.channelId, messageId: sent.id };
-      }
+      await require('../ui/embeds').ensureNowPlayingMessage(interaction.channel, guildId, track);
       return interaction.editReply({ content: `${musicEmojiStr('check', '✓')} Queued: **${track.title}**`, embeds: [], components: [] });
     } catch (error) {
       console.error('[music] addTrack error:', error.message);

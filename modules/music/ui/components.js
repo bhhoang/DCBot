@@ -199,7 +199,7 @@ function queueRows(tracks, pageIndex, totalPages, ownerId) {
     if (pageIndex > 0) {
       navRow.addComponents(
         new ButtonBuilder()
-.setCustomId(IDS.QUEUE_PAGE_PREV + ownerId)
+.setCustomId(IDS.QUEUE_PAGE_PREV + ownerId + ':' + (pageIndex - 1))
       .setLabel('Prev')
       .setEmoji(musicEmoji('pagePrev', '◀'))
       .setStyle(ButtonStyle.Secondary),
@@ -208,7 +208,7 @@ function queueRows(tracks, pageIndex, totalPages, ownerId) {
     if (pageIndex < totalPages - 1) {
       navRow.addComponents(
         new ButtonBuilder()
-.setCustomId(IDS.QUEUE_PAGE_NEXT + ownerId)
+.setCustomId(IDS.QUEUE_PAGE_NEXT + ownerId + ':' + (pageIndex + 1))
       .setLabel('Next')
       .setEmoji(musicEmoji('pageNext', '▶'))
       .setStyle(ButtonStyle.Secondary),

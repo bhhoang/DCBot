@@ -6,6 +6,16 @@ const { searchEmbed } = require('../ui/embeds');
 const { searchRows } = require('../ui/components');
 const { musicEmojiStr } = require('../ui/icons');
 
+// Pure: build the "queued" reply string for the URL fast-path. Single track vs
+// playlist. Exported for tests.
+function queuedReply(track, playlist) {
+  const check = musicEmojiStr('check', '✓');
+  if (playlist && playlist.title) {
+    return `${check} Queued ${playlist.tracks?.length ?? '?'} tracks from **${playlist.title}**`;
+  }
+  return `${check} Queued: **${track.title}**`;
+}
+
 async function runSearch(source, query, isLegacy, provider = 'auto') {
   // Voice channel check
   const member = isLegacy ? source.member : source.member;
@@ -21,6 +31,43 @@ async function runSearch(source, query, isLegacy, provider = 'auto') {
     const content = `${musicEmojiStr('cancel', '✕')} I need Connect + Speak permissions in your voice channel.`;
     if (isLegacy) return source.reply(content);
     return source.reply({ content, flags: MessageFlags.Ephemeral });
+  }
+
+  // URL fast-path: a pasted media URL is an already-made decision, so skip the
+  // picker and queue it (the whole playlist, if it is one). Text queries fall
+  // through to the picker below.
+  if (player.isUrlQuery(query)) {
+    let statusMsg = null;
+    if (isLegacy) statusMsg = await source.reply('🔍 Resolving...');
+    else await source.deferReply({ flags: MessageFlags.Ephemeral });
+    let resolved;
+    try {
+      resolved = await player.resolve(query, provider);
+    } catch (error) {
+      console.error('[music] resolve error:', error.message);
+      const content = `${musicEmojiStr('cancel', '✕')} Couldn't load: ${query}`;
+      if (isLegacy) return statusMsg.edit(content);
+      return source.editReply({ content });
+    }
+    const { tracks, playlist } = resolved;
+    if (!tracks || tracks.length === 0) {
+      const content = `${musicEmojiStr('cancel', '✕')} No results for: ${query}`;
+      if (isLegacy) return statusMsg.edit(content);
+      return source.editReply({ content });
+    }
+    try {
+      await player.addTracks(source.guild.id, voiceChannel, tracks, source.user);
+      const first = tracks[0];
+      await require('../ui/embeds').ensureNowPlayingMessage(source.channel, source.guild.id, first);
+      const content = queuedReply(first, playlist);
+      if (isLegacy) return statusMsg.edit(content);
+      return source.editReply({ content });
+    } catch (error) {
+      console.error('[music] addTracks error:', error.message);
+      const content = `${musicEmojiStr('cancel', '✕')} Could not queue that.`;
+      if (isLegacy) return statusMsg.edit(content);
+      return source.editReply({ content });
+    }
   }
 
   // Defer (legacy uses a status message).
@@ -82,6 +129,7 @@ async function runSearch(source, query, isLegacy, provider = 'auto') {
 }
 
 module.exports = {
+  _queuedReply: queuedReply,
   getCommand: () => ({
     name: 'play',
     description: 'Play a song from YouTube, Spotify, or SoundCloud (shows a picker)',
