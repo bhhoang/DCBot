@@ -94,8 +94,10 @@ module.exports = {
         try {
           // Check if the module is properly initialized
           if (!this.ai) {
-            // Try to initialize now
-            const { GoogleGenAI } = require('@google/genai');
+            // Resolve via the injected moduleRequire: deps live in
+            // modules/.views/gemini/node_modules, which native require() can't find.
+            const req = this.moduleRequire || require;
+            const { GoogleGenAI } = req('@google/genai');
 
             // Get API key
             this.apiKey = process.env.GEMINI_API_KEY || bot.config.gemini?.apiKey;
@@ -167,8 +169,10 @@ module.exports = {
         try {
           // Check if the module is properly initialized
           if (!this.ai) {
-            // Try to initialize now
-            const { GoogleGenAI } = require('@google/genai');
+            // Resolve via the injected moduleRequire: deps live in
+            // modules/.views/gemini/node_modules, which native require() can't find.
+            const req = this.moduleRequire || require;
+            const { GoogleGenAI } = req('@google/genai');
 
             // Get API key
             this.apiKey = process.env.GEMINI_API_KEY || bot.config.gemini?.apiKey;
